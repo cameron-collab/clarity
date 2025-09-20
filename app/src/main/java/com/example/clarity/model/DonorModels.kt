@@ -37,3 +37,9 @@ data class SendSmsOut(
     val ok: Boolean,
     val sid: String
 )
+
+data class SmsStatusOut(
+    val result: String? = null,       // "YES", "NO", "PENDING", null
+    val inbound_body: String? = null,
+    val sent_ts: String? = null
+)

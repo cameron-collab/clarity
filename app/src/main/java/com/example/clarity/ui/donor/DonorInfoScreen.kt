@@ -27,27 +27,29 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DonorInfoScreen(
     sessionId: String,
     fundraiserId: String,
-    onNext: (donorId: String, mobileE164: String) -> Unit,
+    // expanded so Nav.kt can stash extra fields for the SMS
+    onNext: (donorId: String, mobileE164: String, email: String, fullName: String, dobIso: String, address: String) -> Unit,
     onBack: () -> Unit
 ) {
     val focus = LocalFocusManager.current
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
 
+    // keep simple String for everything except DOB (needs cursor control)
     var title by rememberSaveable { mutableStateOf<String?>(null) }
-
     var first by rememberSaveable { mutableStateOf("") }
     var middle by rememberSaveable { mutableStateOf("") }
     var last by rememberSaveable { mutableStateOf("") }
 
-    // Display text for DOB with auto-dashes. We’ll submit dobIso (same string) to backend.
-    //var dobText by remember { mutableStateOf("") }
     var dobText by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(""))
     }
@@ -75,6 +77,38 @@ fun DonorInfoScreen(
         return null
     }
 
+    // ---- Double-tap autofill ----
+    fun autofillFake() {
+        // unique-ish email each time
+        val stamp = System.currentTimeMillis() % 1000000
+        val fakeEmail = "test$stamp@example.com"
+        // required phone (raw); validator will convert to +1416...
+        val fakePhone = "4165806454"
+        // DOB > 25 (randomize between 26 and 40 years)
+        val years = 26L + Random.nextLong(0, 15)
+        val dob = LocalDate.now().minusYears(years).withDayOfMonth(1) // safe day
+            .minusDays(Random.nextLong(0, 20)) // small variation
+            .format(DateTimeFormatter.ISO_DATE)
+
+        title = "Mr."
+        first = "Alex"
+        middle = "Q"
+        last = "Tester"
+
+        // ensure cursor at end with formatted text
+        dobText = TextFieldValue(dob, TextRange(dob.length))
+
+        phone = fakePhone
+        email = fakeEmail
+
+        addr1 = "123 Example St"
+        addr2 = "Unit 4"
+        city = "Toronto"
+        region = "ON"
+        postal = "M5V 2T6"
+        country = "CA"
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -89,8 +123,17 @@ fun DonorInfoScreen(
             Modifier
                 .padding(pad)
                 .fillMaxSize()
-                .imePadding()                 // ← keeps inputs above keyboard
+                .imePadding()
                 .verticalScroll(scroll)
+                // 👇 double-tap anywhere to autofill
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            autofillFake()
+                            focus.clearFocus()
+                        }
+                    )
+                }
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -108,7 +151,6 @@ fun DonorInfoScreen(
                     ),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
                 )
-
                 OutlinedTextField(
                     value = first, onValueChange = { first = it },
                     label = { Text("First") }, singleLine = true,
@@ -141,8 +183,7 @@ fun DonorInfoScreen(
                 )
             }
 
-            // DOB with auto-dash formatting
-
+            // DOB with auto-dash formatting + cursor control
             OutlinedTextField(
                 value = dobText,
                 onValueChange = { incoming ->
@@ -153,7 +194,7 @@ fun DonorInfoScreen(
                             if (i == 3 || i == 5) append('-') // YYYY- MM-
                         }
                     }
-                    dobText = TextFieldValue(text = formatted, selection = TextRange(formatted.length))
+                    dobText = TextFieldValue(formatted, TextRange(formatted.length))
                 },
                 label = { Text("Date of birth (YYYY-MM-DD)") },
                 singleLine = true,
@@ -163,10 +204,8 @@ fun DonorInfoScreen(
                     imeAction = ImeAction.Next
                 ),
                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) }),
-                supportingText = { Text("Type digits only; dashes are added automatically") }
+                supportingText = { Text("Type digits only; dashes are added automatically • Double-tap to autofill") }
             )
-
-
 
             // Contact
             OutlinedTextField(
@@ -229,7 +268,6 @@ fun DonorInfoScreen(
                     value = country, onValueChange = { country = it.uppercase(Locale.CANADA) },
                     label = { Text("Country") }, singleLine = true,
                     modifier = Modifier.weight(1f),
-                    // Last field: show Done and collapse keyboard
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focus.clearFocus() })
                 )
@@ -256,7 +294,7 @@ fun DonorInfoScreen(
                                         first_name = first.trim(),
                                         middle_name = middle.ifBlank { null },
                                         last_name = last.trim(),
-                                        dob_iso = dobText.text,               // already YYYY-MM-DD
+                                        dob_iso = dobText.text,      // already YYYY-MM-DD
                                         mobile_e164 = e164,
                                         email = email.trim(),
                                         address1 = addr1.trim(),
@@ -270,7 +308,21 @@ fun DonorInfoScreen(
                                     )
                                 )
                             }
-                            onNext(out.donor_id, e164)
+
+                            val fullName = listOfNotNull(
+                                title?.takeIf { it.isNotBlank() },
+                                first.trim(),
+                                middle.trim().takeIf { it.isNotBlank() },
+                                last.trim()
+                            ).joinToString(" ")
+
+                            val addressLine = buildString {
+                                append(addr1.trim())
+                                if (addr2.isNotBlank()) append(", ${addr2.trim()}")
+                                append(", ${city.trim()}, ${region.trim()} ${postal.trim()}, ${country.trim()}")
+                            }
+
+                            onNext(out.donor_id, e164, email.trim(), fullName, dobText.text, addressLine)
                         } catch (ex: retrofit2.HttpException) {
                             error = try { ex.response()?.errorBody()?.string() ?: ex.message() }
                             catch (_: Exception) { ex.message() }
@@ -283,7 +335,9 @@ fun DonorInfoScreen(
                 },
                 enabled = !loading,
                 modifier = Modifier.fillMaxWidth()
-            ) { Text(if (loading) "Saving…" else "Continue") }
+            ) {
+                Text(if (loading) "Saving…" else "Continue")
+            }
         }
     }
 }
@@ -303,14 +357,3 @@ private fun phoneE164OrNull(raw: String): String? {
 
 private fun isValidIsoDate(s: String): Boolean =
     runCatching { LocalDate.parse(s, DateTimeFormatter.ISO_DATE) }.isSuccess
-
-/** Auto-dash YYYY-MM-DD as the user types digits */
-private fun formatDobInput(raw: String): String {
-    val digits = raw.filter { it.isDigit() }.take(8)
-    val sb = StringBuilder()
-    for (i in digits.indices) {
-        sb.append(digits[i])
-        if (i == 3 || i == 5) sb.append('-')  // after YYYY and MM
-    }
-    return sb.toString()
-}

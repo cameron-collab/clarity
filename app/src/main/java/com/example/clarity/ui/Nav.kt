@@ -69,15 +69,32 @@ fun AppNav() {
             val s = back.arguments!!.getString("session")!!
             val f = back.arguments!!.getString("fundraiser")!!
 
+            // In the composable(Route.Donor) block, update call to DonorInfoScreen:
             DonorInfoScreen(
                 sessionId = s,
                 fundraiserId = f,
-                onNext = { donorId, mobileE164 ->
-                    nav.currentBackStackEntry?.savedStateHandle?.set("donor_phone_e164", mobileE164)
+                onNext = { donorId, mobileE164, email, fullName, dobIso, address ->
+                    // store donor details in the current backstack entry BEFORE navigating
+                    nav.currentBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("donor_phone_e164", mobileE164)
+                    nav.currentBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("donor_email", email)
+                    nav.currentBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("donor_full_name", fullName)
+                    nav.currentBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("donor_dob", dobIso)
+                    nav.currentBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("donor_address", address)
                     nav.navigate(Route.gift(s, donorId))
                 },
                 onBack = { nav.popBackStack() }
             )
+
 
         }
 
@@ -107,7 +124,8 @@ fun AppNav() {
         }
 
 
-        composable(Route.Verify,
+        composable(
+            Route.Verify,
             arguments = listOf(
                 navArgument("session"){ type = NavType.StringType },
                 navArgument("donor"){ type = NavType.StringType }
@@ -115,8 +133,23 @@ fun AppNav() {
         ) { back ->
             val s = back.arguments!!.getString("session")!!
             val d = back.arguments!!.getString("donor")!!
-            SmsVerifyScreen(s, d) { nav.navigate(Route.pay(s, d)) }
+
+            SmsVerifyScreen(
+                sessionId = s,
+                donorId = d,
+                onYes = {
+                    // proceed to pay and remove Verify from backstack so back doesn’t return here
+                    nav.navigate(Route.pay(s, d)) {
+                        popUpTo(Route.Verify) { inclusive = true }
+                    }
+                },
+                onNo = {
+                    // just pop back to the Donor screen (pattern route is fine here)
+                    nav.popBackStack(Route.Donor, inclusive = false)
+                }
+            )
         }
+
 
         composable(Route.Pay,
             arguments = listOf(

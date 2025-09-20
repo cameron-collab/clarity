@@ -4,8 +4,11 @@ import com.example.clarity.api.model.DonorUpsertIn
 import com.example.clarity.api.model.DonorUpsertOut
 import com.example.clarity.api.model.SendSmsIn
 import com.example.clarity.api.model.SendSmsOut
+import com.example.clarity.api.model.SmsStatusOut
 import retrofit2.http.Body
 import retrofit2.http.POST
+import retrofit2.http.GET
+import retrofit2.http.Query
 
 data class FundraiserLoginIn(val fundraiser_id: String)
 data class FundraiserLoginOut(
@@ -25,4 +28,10 @@ interface GlobalfacesApi {
     // NEW
     @POST("verification/sms/send")
     suspend fun sendSms(@Body body: SendSmsIn): SendSmsOut
+
+    @GET("verification/sms/status")
+    suspend fun getSmsStatus(
+        @Query("session_id") sessionId: String,
+        @Query("donor_id") donorId: String
+    ): SmsStatusOut
 }

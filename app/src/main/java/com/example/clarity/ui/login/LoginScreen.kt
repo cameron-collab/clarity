@@ -1,9 +1,12 @@
 package com.example.clarity.ui.login
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -12,13 +15,9 @@ import com.example.clarity.api.RetrofitProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.ui.text.input.KeyboardType
-
-
+import com.example.clarity.data.CampaignCfg
+import com.example.clarity.data.SessionStore
 
 @Composable
 fun LoginScreen(
@@ -29,78 +28,99 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "Fundraiser Login",
-            style = MaterialTheme.typography.headlineSmall
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = fundraiserId,
-            onValueChange = { fundraiserId = it },
-            label = { Text("Fundraiser ID") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Characters,
-                imeAction = ImeAction.Done
-            ),
-            supportingText = {
-                Text("Example: FR123")
-            }
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        Button(
-            onClick = {
-                if (loading) return@Button
-                error = null
-                loading = true
-
-                scope.launch {
-                    try {
-                        val idUpper = fundraiserId.trim().uppercase()
-                        // Do network off main thread
-                        val res = withContext(Dispatchers.IO) {
-                            RetrofitProvider.api.login(FundraiserLoginIn(idUpper))
-                        }
-                        // Back on main: navigate
-                        onLoggedIn(res.session_id, idUpper)
-                    } catch (e: Exception) {
-                        error = e.message ?: "Login failed"
-                    } finally {
-                        loading = false
-                    }
-                }
-            },
-            enabled = fundraiserId.isNotBlank() && !loading,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (loading) {
-                CircularProgressIndicator(
-                    strokeWidth = 2.dp,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .padding(end = 8.dp)
+            // Logo (make sure you have the PNG in res/drawable as globalfaces_logo.png)
+            Image(
+                painter = painterResource(id = com.example.clarity.R.drawable.globalfaces_logo),
+                contentDescription = "Globalfaces Logo",
+                modifier = Modifier
+                    .size(240.dp) // adjust as needed
+                    .padding(bottom = 32.dp)
+            )
+
+            OutlinedTextField(
+                value = fundraiserId,
+                onValueChange = { fundraiserId = it },
+                label = { Text("Fundraiser ID") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Characters,
+                    imeAction = ImeAction.Done
+                )
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    if (loading) return@Button
+                    error = null
+                    loading = true
+
+                    scope.launch {
+                        try {
+                            val idUpper = fundraiserId.trim().uppercase()
+                            val res = withContext(Dispatchers.IO) {
+                                RetrofitProvider.api.login(FundraiserLoginIn(idUpper))
+                            }
+
+                            // Populate session cache
+                            SessionStore.fundraiserId = idUpper
+                            SessionStore.fundraiserDisplayName = res.fundraiser["DISPLAY_NAME"] as? String
+                            SessionStore.fundraiserFirst = SessionStore.fundraiserDisplayName
+                                ?.trim()
+                                ?.split(" ")
+                                ?.firstOrNull()
+
+                            SessionStore.charityId = res.charity?.get("CHARITY_ID") as? String
+                            SessionStore.charityName = res.charity?.get("NAME") as? String ?: "Your Charity"
+                            SessionStore.charityLogoUrl = res.charity?.get("LOGO_URL") as? String
+                            SessionStore.charityBlurb = res.charity?.get("BLURB") as? String
+                            SessionStore.brandPrimaryHex = res.charity?.get("BRAND_PRIMARY_HEX") as? String
+
+                            SessionStore.campaign = CampaignCfg.fromMap(res.campaign)
+
+                            onLoggedIn(res.session_id, idUpper)
+                        } catch (e: Exception) {
+                            error = e.message ?: "Login failed"
+                        } finally {
+                            loading = false
+                        }
+                    }
+                },
+                enabled = fundraiserId.isNotBlank() && !loading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (loading) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .padding(end = 8.dp)
+                    )
+                }
+                Text(if (loading) "Signing in…" else "Sign in")
+            }
+
+            if (!error.isNullOrBlank()) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Error: $error",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
                 )
             }
-            Text(if (loading) "Signing in…" else "Sign in")
-        }
-
-        if (!error.isNullOrBlank()) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Error: $error",
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium
-            )
         }
     }
 }
