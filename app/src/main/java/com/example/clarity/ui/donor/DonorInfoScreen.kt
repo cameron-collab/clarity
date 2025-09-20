@@ -30,6 +30,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.random.Random
+import com.example.clarity.data.SessionStore
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,26 +45,27 @@ fun DonorInfoScreen(
     val focus = LocalFocusManager.current
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
+    val cached = SessionStore.donorForm
 
-    // keep simple String for everything except DOB (needs cursor control)
-    var title by rememberSaveable { mutableStateOf<String?>(null) }
-    var first by rememberSaveable { mutableStateOf("") }
-    var middle by rememberSaveable { mutableStateOf("") }
-    var last by rememberSaveable { mutableStateOf("") }
+    var title by rememberSaveable { mutableStateOf(cached?.title) }
+    var first by rememberSaveable { mutableStateOf(cached?.first ?: "") }
+    var middle by rememberSaveable { mutableStateOf(cached?.middle ?: "") }
+    var last by rememberSaveable { mutableStateOf(cached?.last ?: "") }
 
+// dob as TextFieldValue with auto-dashes
     var dobText by rememberSaveable(stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(""))
+        mutableStateOf(TextFieldValue(cached?.dobIso.orEmpty()))
     }
 
-    var phone by rememberSaveable { mutableStateOf("") }
-    var email by rememberSaveable { mutableStateOf("") }
+    var phone by rememberSaveable { mutableStateOf(cached?.phoneRaw ?: "") }
+    var email by rememberSaveable { mutableStateOf(cached?.email ?: "") }
 
-    var addr1 by rememberSaveable { mutableStateOf("") }
-    var addr2 by rememberSaveable { mutableStateOf("") }
-    var city by rememberSaveable { mutableStateOf("") }
-    var region by rememberSaveable { mutableStateOf("") }
-    var postal by rememberSaveable { mutableStateOf("") }
-    var country by rememberSaveable { mutableStateOf("CA") }
+    var addr1 by rememberSaveable { mutableStateOf(cached?.addr1 ?: "") }
+    var addr2 by rememberSaveable { mutableStateOf(cached?.addr2 ?: "") }
+    var city  by rememberSaveable { mutableStateOf(cached?.city  ?: "") }
+    var region by rememberSaveable { mutableStateOf(cached?.region ?: "") }
+    var postal by rememberSaveable { mutableStateOf(cached?.postal ?: "") }
+    var country by rememberSaveable { mutableStateOf(cached?.country ?: "CA") }
 
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -287,6 +290,21 @@ fun DonorInfoScreen(
                     scope.launch {
                         try {
                             val e164 = phoneE164OrNull(phone)!!
+                            SessionStore.donorForm = com.example.clarity.data.DonorForm(
+                                title = title,
+                                first = first.trim(),
+                                middle = middle.trim(),
+                                last = last.trim(),
+                                dobIso = dobText.text,
+                                phoneRaw = phone.trim(),   // keep raw; you already pass e164 forward separately
+                                email = email.trim(),
+                                addr1 = addr1.trim(),
+                                addr2 = addr2.ifBlank { "" },
+                                city = city.trim(),
+                                region = region.trim(),
+                                postal = postal.trim(),
+                                country = country.trim().ifBlank { "CA" }
+                            )
                             val out = withContext(Dispatchers.IO) {
                                 RetrofitProvider.api.donorUpsert(
                                     DonorUpsertIn(

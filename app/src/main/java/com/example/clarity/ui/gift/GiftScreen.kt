@@ -1,249 +1,369 @@
 package com.example.clarity.ui.gift
 
+import android.annotation.SuppressLint
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.example.clarity.api.RetrofitProvider
 import com.example.clarity.api.model.SendSmsIn
 import com.example.clarity.data.SessionStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
+import com.example.clarity.data.SelectedGift
 
-// Top-level enum (don’t declare inside @Composable)
-private enum class GiftMode { MONTHLY, OTG }
-
-/**
- * Gift screen that uses campaign config:
- * - Monthly presets from SessionStore.campaign.presetAmounts (cents)
- * - OTG minimum from SessionStore.campaign.minAmount (cents)
- */
 @Composable
 fun GiftScreen(
     sessionId: String,
     donorId: String,
     mobileE164: String,
-    onNavigateToVerify: () -> Unit,
-    onOtg: () -> Unit
+    onGoToPay: () -> Unit,
+    onBackToDonor: () -> Unit
 ) {
-    val focus = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+    val campaign = SessionStore.campaign
+    val currency = (campaign?.currency ?: "CAD").uppercase()
+    val minOtgCents = campaign?.minAmount ?: 1000
+    val charityName = SessionStore.charityName
 
-    // Read campaign snapshot (nullable)
-    val cfg = SessionStore.campaign
-    val currency = cfg?.currency ?: "CAD"
-    val charityName = SessionStore.charityName ?: "Your Charity"
-
-    // UI state
-    var mode by rememberSaveable { mutableStateOf(GiftMode.MONTHLY) }
-    var loading by remember { mutableStateOf(false) }
+    // --- UI state ---
+    var isMonthly by remember { mutableStateOf(true) }
+    var selectedCents by remember { mutableStateOf(campaign?.presetAmounts?.firstOrNull() ?: 2000) }
+    var otgAmountInput by remember { mutableStateOf("") } // dollars text
+    var sending by remember { mutableStateOf(false) }
+    var polling by remember { mutableStateOf(false) }
+    var statusNote by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    // Monthly: selected preset (in cents)
-    val monthlyPresets: List<Int> =
-        (cfg?.presetAmounts?.takeIf { it.isNotEmpty() } ?: listOf(2000, 3000, 4000, 5000))
-            .sorted()
+    // Terms & Conditions
+    val termsUrl = SessionStore.charityTermsUrl.orEmpty()
+    var termsAgreed by remember { mutableStateOf(false) }
+    var showTermsDialog by remember { mutableStateOf(false) }
 
-    var monthlyAmountCents by rememberSaveable {
-        mutableStateOf(monthlyPresets.firstOrNull() ?: 2000)
+    fun otgDollarsToCentsOrNull(txt: String): Int? {
+        val dollars = txt.trim().toDoubleOrNull() ?: return null
+        return max(0.0, dollars).times(100.0).toInt()
     }
 
-    // OTG: free entry with minimum
-    val otgMinCents = max(100, cfg?.minAmount ?: 100) // safety: min $1.00 if missing
-    var otgAmountText by rememberSaveable { mutableStateOf(((otgMinCents / 100.0)).toString()) }
-
-    fun centsToLabel(cents: Int) = "$${"%.0f".format(cents / 100.0)} $currency"
-
-    // Validate OTG raw text to cents (null if invalid or below min)
-    fun otgTextToCentsOrNull(txt: String): Int? {
-        val clean = txt.trim().replace("[^0-9.]".toRegex(), "")
-        val value = clean.toDoubleOrNull() ?: return null
-        val cents = (value * 100).toInt()
-        return if (cents >= otgMinCents) cents else null
+    LaunchedEffect(isMonthly) {
+        error = null
+        if (isMonthly) {
+            selectedCents = campaign?.presetAmounts?.firstOrNull() ?: 2000
+        } else {
+            otgAmountInput = "%.0f".format(minOtgCents / 100.0)
+        }
     }
 
-    Column(Modifier.padding(20.dp)) {
-        Text("Gift", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(12.dp))
-
-        // If campaign is missing, show a soft guard (prevents null crashes)
-        if (cfg == null) {
-            Text(
-                "No campaign configuration found. Please log in again.",
-                color = MaterialTheme.colorScheme.error
-            )
-            return@Column
+    // Poll for SMS result after sending
+    LaunchedEffect(polling) {
+        if (!polling) return@LaunchedEffect
+        statusNote = "Text sent. Waiting for donor reply…"
+        while (polling) {
+            try {
+                val resp = withContext(Dispatchers.IO) {
+                    RetrofitProvider.api.getSmsStatus(sessionId = sessionId, donorId = donorId)
+                }
+                when ((resp.result ?: "PENDING").uppercase()) {
+                    "YES" -> {
+                        statusNote = "Donor confirmed ✅"
+                        polling = false
+                        onGoToPay()
+                    }
+                    "NO" -> {
+                        statusNote = "Donor declined ❌"
+                        polling = false
+                        onBackToDonor()
+                    }
+                    else -> { /* still pending */ }
+                }
+            } catch (e: Exception) {
+                statusNote = "Error checking status: ${e.message}"
+            }
+            delay(2000L)
         }
+    }
 
-        // Toggle row
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = mode == GiftMode.MONTHLY,
-                onClick = { mode = GiftMode.MONTHLY },
-                label = { Text("Monthly") }
-            )
-            FilterChip(
-                selected = mode == GiftMode.OTG,
-                onClick = { mode = GiftMode.OTG },
-                label = { Text("One-time") }
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        if (mode == GiftMode.MONTHLY) {
-            // Preset chips
-            Text("Choose a monthly amount:", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                monthlyPresets.forEach { amt ->
-                    AssistChip(
-                        onClick = { monthlyAmountCents = amt },
-                        label = { Text(centsToLabel(amt)) },
-                        leadingIcon = {
-                            if (monthlyAmountCents == amt) Icon(
-                                Icons.Default.Check,
-                                contentDescription = null
-                            )
-                        },
-                        enabled = !loading
+    // Outer centering
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        // Constrain width and give a little elevation
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 600.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header + charity name
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "Gift",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        charityName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
 
-            Spacer(Modifier.height(20.dp))
-
-            Button(
-                enabled = !loading && mobileE164.isNotBlank(),
-                onClick = {
-                    if (mobileE164.isBlank()) {
-                        error = "Missing donor phone — go back and re-enter."
-                        return@Button
-                    }
-                    loading = true
-                    error = null
-                    scope.launch {
-                        try {
-                            val body = SendSmsIn(
-                                to_e164 = mobileE164,
-                                session_id = sessionId,
-                                donor_id = donorId,
-                                charity_name = charityName,
-                                gift_type = "MONTHLY",
-                                amount_cents = monthlyAmountCents,
-                                currency = currency,
-                                preview_message = null // backend composes final message
-                            )
-                            withContext(Dispatchers.IO) { RetrofitProvider.api.sendSms(body) }
-                            onNavigateToVerify()
-                        } catch (e: Exception) {
-                            error = e.message ?: "Failed to send SMS"
-                        } finally {
-                            loading = false
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (loading) "Sending SMS…" else "Continue")
-            }
-        } else {
-            // OTG entry
-            Text("Enter a one-time amount (min ${centsToLabel(otgMinCents)}):", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = otgAmountText,
-                onValueChange = { otgAmountText = it },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focus.clearFocus() }),
-                prefix = { Text("$") },
-                supportingText = {
-                    val cents = otgTextToCentsOrNull(otgAmountText)
-                    if (cents == null) Text("Enter at least ${centsToLabel(otgMinCents)}")
+                // Frequency toggle (centered)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FrequencyChip("Monthly", isMonthly) { isMonthly = true }
+                    FrequencyChip("One-Time", !isMonthly) { isMonthly = false }
                 }
-            )
 
-            Spacer(Modifier.height(20.dp))
-
-            // Send SMS for OTG too (so the verify screen behavior stays consistent)
-            Button(
-                enabled = !loading && mobileE164.isNotBlank() && otgTextToCentsOrNull(otgAmountText) != null,
-                onClick = {
-                    val cents = otgTextToCentsOrNull(otgAmountText)
-                    if (mobileE164.isBlank()) {
-                        error = "Missing donor phone — go back and re-enter."
-                        return@Button
-                    }
-                    if (cents == null) {
-                        error = "Please enter at least ${centsToLabel(otgMinCents)}"
-                        return@Button
-                    }
-                    loading = true
-                    error = null
-                    scope.launch {
-                        try {
-                            val body = SendSmsIn(
-                                to_e164 = mobileE164,
-                                session_id = sessionId,
-                                donor_id = donorId,
-                                charity_name = charityName,
-                                gift_type = "OTG",
-                                amount_cents = cents,
-                                currency = currency,
-                                preview_message = null
-                            )
-                            withContext(Dispatchers.IO) { RetrofitProvider.api.sendSms(body) }
-                            onNavigateToVerify() // we still verify via SMS YES/NO
-                        } catch (e: Exception) {
-                            error = e.message ?: "Failed to send SMS"
-                        } finally {
-                            loading = false
+                if (isMonthly) {
+                    // Monthly preset chips
+                    val presets = campaign?.presetAmounts?.takeIf { it.isNotEmpty() }
+                        ?: listOf(2000, 3000, 4000, 5000)
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("Choose monthly amount", style = MaterialTheme.typography.titleMedium)
+                        presets.chunked(5).forEach { row ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                row.forEach { cents ->
+                                    val selected = selectedCents == cents
+                                    FilterChip(
+                                        selected = selected,
+                                        onClick = { selectedCents = cents },
+                                        label = { Text(centsToLabel(cents, currency)) }
+                                    )
+                                }
+                            }
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (loading) "Sending SMS…" else "Continue")
+                } else {
+                    // One-time entry
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "Enter one-time amount (min ${centsToLabel(minOtgCents, currency)})",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        OutlinedTextField(
+                            value = otgAmountInput,
+                            onValueChange = { otgAmountInput = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                            singleLine = true,
+                            prefix = { Text("$") },
+                            trailingIcon = { Text(currency) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                // Terms & Conditions block (kept as dialog flow)
+                TermsAndConditionsBlock(
+                    termsUrl = termsUrl,
+                    agreed = termsAgreed,
+                    onToggleAgree = { termsAgreed = it },
+                    onOpen = { if (termsUrl.isNotBlank()) showTermsDialog = true }
+                )
+
+                // Send SMS button (gated by termsAgreed)
+                Button(
+                    onClick = {
+                        if (mobileE164.isBlank()) {
+                            error = "Missing donor phone — go back and re-enter."
+                            return@Button
+                        }
+                        if (!termsAgreed) {
+                            error = "Please agree to the Terms & Conditions."
+                            return@Button
+                        }
+                        val (giftType, amountCents) =
+                            if (isMonthly) "MONTHLY" to selectedCents
+                            else {
+                                val cents = otgDollarsToCentsOrNull(otgAmountInput)
+                                if (cents == null) {
+                                    error = "Enter a valid one-time amount."
+                                    return@Button
+                                }
+                                if (cents < minOtgCents) {
+                                    error = "Minimum one-time is ${centsToLabel(minOtgCents, currency)}."
+                                    return@Button
+                                }
+                                "OTG" to cents
+                            }
+
+                        error = null
+                        sending = true
+                        statusNote = null
+                        scope.launch {
+                            try {
+                                val body = SendSmsIn(
+                                    to_e164 = mobileE164,
+                                    session_id = sessionId,
+                                    donor_id = donorId,
+                                    charity_name = SessionStore.charityName,
+                                    gift_type = giftType,
+                                    amount_cents = amountCents,
+                                    currency = currency,
+                                    preview_message = null
+                                )
+                                SessionStore.selectedGift = SelectedGift(
+                                    type = giftType,
+                                    amountCents = amountCents,
+                                    currency = currency
+                                )
+                                withContext(Dispatchers.IO) { RetrofitProvider.api.sendSms(body) }
+                                polling = true
+                            } catch (e: Exception) {
+                                error = e.message ?: "Failed to send SMS"
+                            } finally {
+                                sending = false
+                            }
+                        }
+                    },
+                    enabled = !sending && !polling && termsAgreed,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                ) {
+                    Text(if (sending) "Sending…" else "Send Verification Text")
+                }
+
+                statusNote?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium)
+                }
+                error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error)
+                }
             }
-
-            // If you still want the old “go straight to pay” button, keep this:
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onOtg,
-                enabled = !loading,
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Skip SMS and proceed to payment") }
         }
+    }
 
-        error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
+    // In-app Terms viewer (modal dialog with WebView)
+    if (showTermsDialog) {
+        TermsDialog(termsUrl) { showTermsDialog = false }
+    }
+}
+
+/* ---------- UI pieces ---------- */
+
+@Composable
+private fun FrequencyChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        tonalElevation = if (selected) 4.dp else 0.dp,
+        shape = MaterialTheme.shapes.large,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        modifier = Modifier
+            .height(40.dp)
+            .selectable(selected = selected, onClick = onClick, role = Role.RadioButton)
+    ) {
+        Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface
+            )
         }
     }
 }
 
-/* --- Small, dependency-free FlowRow (to avoid bringing in Accompanist) --- */
 @Composable
-private fun FlowRow(
-    modifier: Modifier = Modifier,
-    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
-    content: @Composable RowScope.() -> Unit
+private fun TermsAndConditionsBlock(
+    termsUrl: String,
+    agreed: Boolean,
+    onToggleAgree: (Boolean) -> Unit,
+    onOpen: () -> Unit
 ) {
-    Column(modifier = modifier) {
-        Row(horizontalArrangement = horizontalArrangement, content = content)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Terms & Conditions", style = MaterialTheme.typography.titleMedium)
+            if (termsUrl.isNotBlank()) {
+                TextButton(onClick = onOpen) { Text("View") }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = agreed, onCheckedChange = onToggleAgree)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "I agree to the Terms & Conditions" +
+                        if (termsUrl.isNotBlank()) " (see link above)" else ""
+            )
+        }
     }
+}
+
+@Composable
+private fun TermsDialog(termsUrl: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        title = { Text("Terms & Conditions") },
+        text = {
+            if (termsUrl.isBlank()) {
+                Text("No Terms URL provided.")
+            } else {
+                TermsWebView(url = termsUrl)
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun TermsWebView(url: String) {
+    // Give the dialog body a reasonable height
+    Box(Modifier.height(500.dp)) {
+        AndroidView(
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    settings.javaScriptEnabled = true
+                    webViewClient = WebViewClient()
+                    loadUrl(url)
+                }
+            },
+            update = { it.loadUrl(url) },
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+/* ---------- Helpers ---------- */
+
+private fun centsToLabel(cents: Int, currency: String): String {
+    val d = cents / 100.0
+    return "$" + (if (d % 1.0 == 0.0) "%.0f" else "%.2f").format(d) + " $currency"
 }

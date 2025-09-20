@@ -59,6 +59,27 @@ data class CampaignCfg(
     }
 }
 
+data class DonorForm(
+    val title: String? = null,
+    val first: String = "",
+    val middle: String = "",
+    val last: String = "",
+    val dobIso: String = "",
+    val phoneRaw: String = "",
+    val email: String = "",
+    val addr1: String = "",
+    val addr2: String = "",
+    val city: String = "",
+    val region: String = "",
+    val postal: String = "",
+    val country: String = "CA"
+)
+
+data class SelectedGift(
+    val type: String,      // "MONTHLY" or "OTG"
+    val amountCents: Int,
+    val currency: String   // e.g., "CAD"
+)
 
 object SessionStore {
     // Campaign configuration (parsed from API)
@@ -75,5 +96,12 @@ object SessionStore {
     var charityLogoUrl: String? = null
     var charityBlurb: String? = null   // <- add this
     var brandPrimaryHex: String? = null // <- already referenced
+
+    var charityTermsUrl: String? = null
+
+    var donorForm: DonorForm? = null
+
+    var selectedGift: SelectedGift? = null
+
 }
 

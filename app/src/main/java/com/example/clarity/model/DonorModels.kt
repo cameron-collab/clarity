@@ -43,3 +43,11 @@ data class SmsStatusOut(
     val inbound_body: String? = null,
     val sent_ts: String? = null
 )
+
+data class DonorConsentIn(
+    val session_id: String,
+    val donor_id: String,
+    val consent_sms: Boolean = true,
+    val consent_email: Boolean = true,
+    val consent_mail: Boolean = true
+)

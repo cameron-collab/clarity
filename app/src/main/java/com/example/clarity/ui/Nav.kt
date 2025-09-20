@@ -118,10 +118,17 @@ fun AppNav() {
                 sessionId = s,
                 donorId = d,
                 mobileE164 = phoneE164,
-                onNavigateToVerify = { nav.navigate(Route.verify(s, d)) },  // <- replaces onMonthly
-                onOtg = { nav.navigate(Route.pay(s, d)) }
+                onGoToPay = { nav.navigate(Route.pay(s, d)) },
+                onBackToDonor = {
+                    // We stored fundraiserId at login; reuse it to return to donor screen.
+                    val f = com.example.clarity.data.SessionStore.fundraiserId ?: return@GiftScreen
+                    nav.navigate(Route.donor(s, f)) {
+                        launchSingleTop = true
+                    }
+                }
             )
         }
+
 
 
         composable(
@@ -159,10 +166,13 @@ fun AppNav() {
         ) { back ->
             val s = back.arguments!!.getString("session")!!
             val d = back.arguments!!.getString("donor")!!
-            PaymentScreen(s, d) { monthly ->
-                if (monthly) nav.navigate(Route.comms(s, d))
-                else nav.navigate(Route.comms(s, d))
-            }
+
+            PaymentScreen(
+                sessionId = s,
+                donorId = d,
+                onDone = { nav.navigate(Route.comms(s, d)) },
+                onBack = { nav.popBackStack() }
+            )
         }
 
         composable(Route.Comms,

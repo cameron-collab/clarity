@@ -90,6 +90,7 @@ fun LoginScreen(
                             SessionStore.brandPrimaryHex = res.charity?.get("BRAND_PRIMARY_HEX") as? String
 
                             SessionStore.campaign = CampaignCfg.fromMap(res.campaign)
+                            SessionStore.charityTermsUrl = res.charity?.get("TERMS_URL") as? String
 
                             onLoggedIn(res.session_id, idUpper)
                         } catch (e: Exception) {
