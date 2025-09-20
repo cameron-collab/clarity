@@ -59,7 +59,8 @@ fun AppNav() {
             CampaignScreen(s, f) { nav.navigate(Route.donor(s, f)) }
         }
 
-        composable(Route.Donor,
+        composable(
+            Route.Donor,
             arguments = listOf(
                 navArgument("session"){ type = NavType.StringType },
                 navArgument("fundraiser"){ type = NavType.StringType }
@@ -67,10 +68,22 @@ fun AppNav() {
         ) { back ->
             val s = back.arguments!!.getString("session")!!
             val f = back.arguments!!.getString("fundraiser")!!
-            DonorInfoScreen(s, f) { donorId -> nav.navigate(Route.gift(s, donorId)) }
+
+            DonorInfoScreen(
+                sessionId = s,
+                fundraiserId = f,
+                onNext = { donorId, mobileE164 ->
+                    nav.currentBackStackEntry?.savedStateHandle?.set("donor_phone_e164", mobileE164)
+                    nav.navigate(Route.gift(s, donorId))
+                },
+                onBack = { nav.popBackStack() }
+            )
+
         }
 
-        composable(Route.Gift,
+
+        composable(
+            Route.Gift,
             arguments = listOf(
                 navArgument("session"){ type = NavType.StringType },
                 navArgument("donor"){ type = NavType.StringType }
@@ -78,11 +91,21 @@ fun AppNav() {
         ) { back ->
             val s = back.arguments!!.getString("session")!!
             val d = back.arguments!!.getString("donor")!!
-            GiftScreen(s, d,
-                onMonthly = { nav.navigate(Route.verify(s, d)) },
+
+            val phoneE164 = nav.previousBackStackEntry
+                ?.savedStateHandle
+                ?.get<String>("donor_phone_e164")
+                .orEmpty()
+
+            GiftScreen(
+                sessionId = s,
+                donorId = d,
+                mobileE164 = phoneE164,
+                onNavigateToVerify = { nav.navigate(Route.verify(s, d)) },  // <- replaces onMonthly
                 onOtg = { nav.navigate(Route.pay(s, d)) }
             )
         }
+
 
         composable(Route.Verify,
             arguments = listOf(

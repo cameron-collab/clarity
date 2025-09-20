@@ -1,17 +1,17 @@
 package com.example.clarity.api
+
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import okhttp3.OkHttpClient
-import java.util.concurrent.TimeUnit
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import java.util.concurrent.TimeUnit
 
-object RetrofitProvider {
-    // Emulator → host FastAPI
-    private const val BASE_URL = "https://8c06d4fd2d20.ngrok-free.app"
-    // For a physical device, swap to your ngrok URL.
+object Api {
+    // <-- UPDATE THIS to your current ngrok URL (must end with a trailing slash)
+    private const val BASE_URL = "https://8c06d4fd2d20.ngrok-free.app/"
 
-    private val moshi: Moshi = Moshi.Builder()
+    private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())
         .build()
 
@@ -26,5 +26,5 @@ object RetrofitProvider {
         .client(client)
         .build()
 
-    val api: GlobalfacesApi = retrofit.create(GlobalfacesApi::class.java)
+    val globalfaces: GlobalfacesApi = retrofit.create(GlobalfacesApi::class.java)
 }

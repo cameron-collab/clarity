@@ -1,6 +1,9 @@
 package com.example.clarity.api
 
-import retrofit2.Call
+import com.example.clarity.api.model.DonorUpsertIn
+import com.example.clarity.api.model.DonorUpsertOut
+import com.example.clarity.api.model.SendSmsIn
+import com.example.clarity.api.model.SendSmsOut
 import retrofit2.http.Body
 import retrofit2.http.POST
 
@@ -14,5 +17,12 @@ data class FundraiserLoginOut(
 
 interface GlobalfacesApi {
     @POST("fundraiser/login")
-    fun login(@Body body: FundraiserLoginIn): Call<FundraiserLoginOut>
+    suspend fun login(@Body body: FundraiserLoginIn): FundraiserLoginOut
+
+    @POST("donor/upsert")
+    suspend fun donorUpsert(@Body body: DonorUpsertIn): DonorUpsertOut
+
+    // NEW
+    @POST("verification/sms/send")
+    suspend fun sendSms(@Body body: SendSmsIn): SendSmsOut
 }
