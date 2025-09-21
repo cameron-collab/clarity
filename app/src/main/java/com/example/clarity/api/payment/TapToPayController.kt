@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import com.stripe.stripeterminal.external.models.CollectConfiguration
+import com.stripe.stripeterminal.external.models.AllowRedisplay
 
 /**
  * Real Stripe Terminal controller based on Stripe sample code
@@ -117,6 +119,11 @@ class TapToPayController {
 
     suspend fun collectPaymentMethod(paymentIntent: PaymentIntent): PaymentIntent {
         return suspendCancellableCoroutine { continuation ->
+            // Create configuration with allow_redisplay for saving payment methods
+            val config = CollectConfiguration.Builder()
+                .setAllowRedisplay(AllowRedisplay.ALWAYS)
+                .build()
+
             Terminal.getInstance().collectPaymentMethod(
                 paymentIntent,
                 object : PaymentIntentCallback {
@@ -127,7 +134,8 @@ class TapToPayController {
                     override fun onFailure(e: TerminalException) {
                         continuation.resumeWithException(e)
                     }
-                }
+                },
+                config  // Config as third parameter
             )
         }
     }
@@ -218,9 +226,21 @@ class TapToPayController {
 
             println("=== DEBUG: selectedGift = $selectedGift ===")
             println("=== DEBUG: priceId = $priceId ===")
+            println("=== DEBUG: paymentIntent.id = ${paymentIntent.id} ===")
 
             if (priceId.isNullOrBlank()) {
                 return PaymentResult.Failed("No Stripe Price ID found for monthly product")
+            }
+
+            // Get payment method ID from backend
+            val paymentIntentId = paymentIntent.id ?: return PaymentResult.Failed("Missing payment intent ID")
+            val paymentMethodResponse = RetrofitProvider.api.getPaymentMethodFromIntent(paymentIntentId)
+            val paymentMethodId = paymentMethodResponse.payment_method_id
+
+            println("=== DEBUG: Retrieved paymentMethodId from backend = $paymentMethodId ===")
+
+            if (paymentMethodId.isNullOrBlank()) {
+                return PaymentResult.Failed("No payment method found for payment intent")
             }
 
             // Get donor info for customer creation
@@ -237,6 +257,16 @@ class TapToPayController {
                         "session_id" to sessionId,
                         "payment_intent_id" to (paymentIntent.id ?: "")
                     )
+                )
+            )
+
+            // Attach payment method to customer
+            RetrofitProvider.api.attachPaymentMethod(
+                com.example.clarity.api.model.PaymentMethodAttachIn(
+                    customer_id = customerResponse.customer_id,
+                    payment_method_id = paymentMethodId,
+                    session_id = sessionId,
+                    donor_id = donorId
                 )
             )
 

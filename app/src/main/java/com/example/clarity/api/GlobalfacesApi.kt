@@ -68,6 +68,11 @@ data class DeviceRegistrationOut(
     val device_type: String
 )
 
+data class PaymentMethodResponse(
+    val payment_method_id: String?,
+    val status: String
+)
+
 interface GlobalfacesApi {
     @POST("fundraiser/login")
     suspend fun login(@Body body: FundraiserLoginIn): FundraiserLoginOut
@@ -130,6 +135,10 @@ interface GlobalfacesApi {
 
     @POST("/terminal/register_device")
     suspend fun registerDevice(@Body body: DeviceRegistrationIn): DeviceRegistrationOut
+
+    @GET("/payment_intent/{payment_intent_id}/payment_method")
+    suspend fun getPaymentMethodFromIntent(@Path("payment_intent_id") paymentIntentId: String): PaymentMethodResponse
+
 
 
 }
