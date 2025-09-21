@@ -16,6 +16,8 @@ import com.example.clarity.api.model.SendSmsIn
 import com.example.clarity.api.model.SendSmsOut
 import com.example.clarity.api.model.SmsStatusOut
 import com.example.clarity.api.model.DonorConsentIn
+import com.example.clarity.api.model.TerminalPaymentIntentIn
+import com.example.clarity.api.model.TerminalPaymentIntentOut
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.GET
@@ -54,6 +56,18 @@ data class ProductOut(
     val stripe_price_id: String?,
     val active: Boolean
 )
+
+data class DeviceRegistrationIn(
+    val device_code: String,
+    val location_id: String
+)
+
+data class DeviceRegistrationOut(
+    val reader_id: String,
+    val status: String,
+    val device_type: String
+)
+
 interface GlobalfacesApi {
     @POST("fundraiser/login")
     suspend fun login(@Body body: FundraiserLoginIn): FundraiserLoginOut
@@ -96,8 +110,10 @@ interface GlobalfacesApi {
     suspend fun createTerminalConnectionToken(): ConnectionTokenOut
     data class ConnectionTokenOut(val secret: String)
 
-    //@POST("/terminal/payment_intent")
-    //suspend fun createTerminalPaymentIntent(@Body body: TerminalPaymentIntentIn): TerminalPaymentIntentOut
+    @POST("/terminal/payment_intent")
+    suspend fun createTerminalPaymentIntent(@Body body: TerminalPaymentIntentIn): TerminalPaymentIntentOut
+
+
     @GET("/products/lookup")
     suspend fun lookupProduct(
         @Query("campaign_id") campaignId: String,
@@ -111,6 +127,9 @@ interface GlobalfacesApi {
 
     @GET("/products/campaign/{campaign_id}")
     suspend fun getCampaignProducts(@Path("campaign_id") campaignId: String): CampaignProductsOut
+
+    @POST("/terminal/register_device")
+    suspend fun registerDevice(@Body body: DeviceRegistrationIn): DeviceRegistrationOut
 
 
 }

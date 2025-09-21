@@ -9,13 +9,13 @@ import com.stripe.stripeterminal.external.models.ConnectionStatus
 import com.stripe.stripeterminal.external.models.PaymentStatus
 import com.stripe.stripeterminal.log.LogLevel
 import com.stripe.stripeterminal.taptopay.TapToPay
+import android.util.Log
 
 
 class StripeTerminalApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // IMPORTANT: don't init in the Tap to Pay process
         if (TapToPay.isInTapToPayProcess()) return
 
         TerminalApplicationDelegate.onCreate(this)
@@ -26,8 +26,12 @@ class StripeTerminalApplication : Application() {
                 LogLevel.VERBOSE,
                 BackendConnectionTokenProvider(),
                 object : TerminalListener {
-                    override fun onConnectionStatusChange(status: ConnectionStatus) { /* no-op */ }
-                    override fun onPaymentStatusChange(status: PaymentStatus) { /* no-op */ }
+                    override fun onConnectionStatusChange(status: ConnectionStatus) {
+                        Log.d("Terminal", "Connection status: $status")
+                    }
+                    override fun onPaymentStatusChange(status: PaymentStatus) {
+                        Log.d("Terminal", "Payment status: $status")
+                    }
                 }
             )
         }

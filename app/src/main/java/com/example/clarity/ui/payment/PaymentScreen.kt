@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.clarity.api.RetrofitProvider
 import com.example.clarity.api.payment.TapToPayController
+import com.example.clarity.api.payment.PaymentResult
 import com.example.clarity.data.SessionStore
 import com.example.clarity.ui.theme.Brand
 import kotlinx.coroutines.Dispatchers
@@ -98,46 +99,36 @@ fun PaymentScreen(
                     Text(statusMsg, style = MaterialTheme.typography.bodySmall)
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // Start Payment Button (simplified - uses backend)
+                        // Start Payment Button - now uses real Stripe Terminal
                         Button(
                             enabled = !paymentInProgress && !paymentCompleted,
                             onClick = {
                                 paymentInProgress = true
-                                statusMsg = "Creating payment intent..."
+                                statusMsg = "Processing payment..."
                                 error = null
 
                                 scope.launch {
                                     try {
-                                        // Create payment intent via backend
-                                        val clientSecret = tapToPayController.createPaymentIntent(
+                                        val result = tapToPayController.processCompletePayment(
                                             amountCents = amountCents,
                                             currency = currency,
                                             sessionId = sessionId,
-                                            donorId = donorId
+                                            donorId = donorId,
+                                            isMonthly = isMonthly
                                         )
 
-                                        statusMsg = "Processing payment..."
-
-                                        // Process payment with database logging
-                                        val success = tapToPayController.collectAndConfirmPayment(
-                                            clientSecret,
-                                            sessionId,
-                                            donorId,
-                                            isMonthly,
-                                            amountCents,
-                                            currency//,
-                                            //SessionStore.campaign?.campaignId ?: ""
-                                        )
-
-                                        if (success) {
-                                            paymentCompleted = true
-                                            paymentInProgress = false
-                                            statusMsg = "Payment successful!"
-                                            successMsg = "Payment completed successfully"
-                                        } else {
-                                            error = "Payment was declined"
-                                            statusMsg = "Payment failed"
-                                            paymentInProgress = false
+                                        when (result) {
+                                            is PaymentResult.Success -> {
+                                                paymentCompleted = true
+                                                paymentInProgress = false
+                                                statusMsg = "Payment successful!"
+                                                successMsg = "Payment completed successfully"
+                                            }
+                                            is PaymentResult.Failed -> {
+                                                error = result.error
+                                                statusMsg = "Payment failed"
+                                                paymentInProgress = false
+                                            }
                                         }
 
                                     } catch (e: Exception) {
@@ -261,8 +252,6 @@ fun PaymentScreen(
                                 submitBusy = false
                                 return@launch
                             }
-
-                            // No need to disconnect reader in simplified version
 
                             successMsg = "Transaction completed successfully!"
                             onDone()

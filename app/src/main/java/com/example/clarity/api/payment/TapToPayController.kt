@@ -1,140 +1,307 @@
 package com.example.clarity.api.payment
 
-import com.example.clarity.api.RetrofitProvider
+import com.example.clarity.api.*
 import com.example.clarity.data.SessionStore
+import com.stripe.stripeterminal.Terminal
+import com.stripe.stripeterminal.external.callable.*
+import com.stripe.stripeterminal.external.models.*
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 /**
- * Controller that uses real Stripe Price IDs for monthly donations
- * and your backend endpoints for payment processing
+ * Real Stripe Terminal controller based on Stripe sample code
  */
 class TapToPayController {
 
-    suspend fun createPaymentIntent(
+    companion object {
+        private val discoveryConfig = DiscoveryConfiguration.TapToPayDiscoveryConfiguration(isSimulated = true)
+    }
+
+    suspend fun initializeTapToPay(): Boolean {
+        return suspendCancellableCoroutine { continuation ->
+            val discoveryListener = object : DiscoveryListener {
+                override fun onUpdateDiscoveredReaders(readers: List<Reader>) {
+                    if (readers.isNotEmpty()) {
+                        connectToReader(readers.first()) { success ->
+                            continuation.resume(success)
+                        }
+                    } else {
+                        continuation.resumeWithException(Exception("No Tap to Pay readers found"))
+                    }
+                }
+            }
+
+            val discoveryCallback = object : Callback {
+                override fun onSuccess() {
+                    // Discovery completed - readers will be handled in onUpdateDiscoveredReaders
+                }
+
+                override fun onFailure(e: TerminalException) {
+                    continuation.resumeWithException(e)
+                }
+            }
+
+            Terminal.getInstance().discoverReaders(discoveryConfig, discoveryListener, discoveryCallback)
+        }
+    }
+
+    private fun connectToReader(reader: Reader, callback: (Boolean) -> Unit) {
+        val connectionConfig = ConnectionConfiguration.TapToPayConnectionConfiguration(
+            locationId = "tml_GMwgTw8OHAJtnR", // Your Stripe Terminal location ID
+            autoReconnectOnUnexpectedDisconnect = true,
+            tapToPayReaderListener = object : TapToPayReaderListener {
+                override fun onDisconnect(reason: DisconnectReason) {
+                    // Handle disconnection
+                }
+            }
+        )
+
+        val readerCallback = object : ReaderCallback {
+            override fun onSuccess(reader: Reader) {
+                callback(true)
+            }
+
+            override fun onFailure(e: TerminalException) {
+                callback(false)
+            }
+        }
+
+        Terminal.getInstance().connectReader(
+            reader = reader,
+            config = connectionConfig,
+            connectionCallback = readerCallback
+        )
+    }
+
+    suspend fun createTerminalPaymentIntent(
         amountCents: Int,
         currency: String = "cad",
         sessionId: String? = null,
         donorId: String? = null
-    ): String {
-        // Use your existing backend endpoint
-        val response = RetrofitProvider.api.createPaymentIntent(
-            com.example.clarity.api.model.PaymentIntentIn(
-                amount = amountCents,
-                currency = currency,
-                session_id = sessionId,
-                donor_id = donorId
-            )
-        )
-        return response.client_secret
+    ): PaymentIntent {
+        return suspendCancellableCoroutine { continuation ->
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val response = RetrofitProvider.api.createTerminalPaymentIntent(
+                        com.example.clarity.api.model.TerminalPaymentIntentIn(
+                            amount = amountCents,
+                            currency = currency,
+                            session_id = sessionId,
+                            donor_id = donorId
+                        )
+                    )
+
+                    // Retrieve the PaymentIntent from Stripe Terminal
+                    Terminal.getInstance().retrievePaymentIntent(
+                        response.client_secret,
+                        object : PaymentIntentCallback {
+                            override fun onSuccess(paymentIntent: PaymentIntent) {
+                                continuation.resume(paymentIntent)
+                            }
+
+                            override fun onFailure(e: TerminalException) {
+                                continuation.resumeWithException(e)
+                            }
+                        }
+                    )
+                } catch (e: Exception) {
+                    continuation.resumeWithException(e)
+                }
+            }
+        }
     }
 
-    suspend fun collectAndConfirmPayment(
-        clientSecret: String,
+    suspend fun collectPaymentMethod(paymentIntent: PaymentIntent): PaymentIntent {
+        return suspendCancellableCoroutine { continuation ->
+            Terminal.getInstance().collectPaymentMethod(
+                paymentIntent,
+                object : PaymentIntentCallback {
+                    override fun onSuccess(paymentIntent: PaymentIntent) {
+                        continuation.resume(paymentIntent)
+                    }
+
+                    override fun onFailure(e: TerminalException) {
+                        continuation.resumeWithException(e)
+                    }
+                }
+            )
+        }
+    }
+
+    suspend fun confirmPaymentIntent(paymentIntent: PaymentIntent): PaymentIntent {
+        return suspendCancellableCoroutine { continuation ->
+            Terminal.getInstance().confirmPaymentIntent(
+                paymentIntent,
+                object : PaymentIntentCallback {
+                    override fun onSuccess(paymentIntent: PaymentIntent) {
+                        continuation.resume(paymentIntent)
+                    }
+
+                    override fun onFailure(e: TerminalException) {
+                        continuation.resumeWithException(e)
+                    }
+                }
+            )
+        }
+    }
+
+    suspend fun processCompletePayment(
+        amountCents: Int,
+        currency: String,
         sessionId: String,
         donorId: String,
-        isMonthly: Boolean,
-        amountCents: Int,
-        currency: String
-    ): Boolean {
-        // Simulate processing time
-        kotlinx.coroutines.delay(2000)
-
+        isMonthly: Boolean
+    ): PaymentResult {
         try {
-            if (isMonthly) {
-                // Use real Stripe subscription creation for monthly donations
-                return createMonthlySubscription(sessionId, donorId, amountCents, currency)
-            } else {
-                // For one-time donations, just log completion for now
-                return processOneTimePayment(sessionId, donorId, amountCents, currency)
+            println("=== DEBUG: Starting payment, isMonthly: $isMonthly ===")
+
+            // Step 0: Initialize Tap to Pay (connect to phone's NFC reader) if not connected
+            if (!isReaderConnected()) {
+                initializeTapToPay()
             }
+
+            // Step 1: Create payment intent
+            val paymentIntent = createTerminalPaymentIntent(
+                amountCents = amountCents,
+                currency = currency,
+                sessionId = sessionId,
+                donorId = donorId
+            )
+            println("=== DEBUG: Created payment intent, status: ${paymentIntent.status} ===")
+
+            // Step 2: Collect payment method (this is where tap-to-pay happens)
+            val collectedIntent = collectPaymentMethod(paymentIntent)
+            println("=== DEBUG: Collected payment method, status: ${collectedIntent.status} ===")
+
+            // Step 3: Confirm payment
+            val confirmedIntent = confirmPaymentIntent(collectedIntent)
+            println("=== DEBUG: Confirmed payment, status: ${confirmedIntent.status} ===")
+
+            // Step 4: Handle post-payment processing (subscriptions, etc.)
+            if (isMonthly && confirmedIntent.status == PaymentIntentStatus.SUCCEEDED) {
+                println("=== DEBUG: Processing as MONTHLY subscription ===")
+                return handleMonthlySubscription(sessionId, donorId, amountCents, currency, confirmedIntent)
+            } else if (confirmedIntent.status == PaymentIntentStatus.SUCCEEDED) {
+                println("=== DEBUG: Processing as ONE-TIME payment ===")
+                return handleOneTimePayment(sessionId, donorId, amountCents, currency, confirmedIntent)
+            } else {
+                println("=== DEBUG: Payment not successful, status: ${confirmedIntent.status} ===")
+                return PaymentResult.Failed("Payment was not successful: ${confirmedIntent.status}")
+            }
+
+        } catch (e: TerminalException) {
+            println("=== DEBUG: TerminalException: ${e.errorMessage} ===")
+            return PaymentResult.Failed("Terminal error: ${e.errorMessage}")
         } catch (e: Exception) {
-            // Log the error
-            RetrofitProvider.api.logEvent(
-                com.example.clarity.api.model.LogEventIn(
-                    event_type = "PAYMENT_FAILED",
-                    session_id = sessionId,
-                    donor_id = donorId,
-                    attributes = mapOf(
-                        "error" to (e.message ?: "Unknown error"),
-                        "payment_type" to if (isMonthly) "MONTHLY" else "OTG"
+            println("=== DEBUG: Exception: ${e.message} ===")
+            return PaymentResult.Failed("Payment failed: ${e.message}")
+        }
+    }
+
+    private suspend fun handleMonthlySubscription(
+        sessionId: String,
+        donorId: String,
+        amountCents: Int,
+        currency: String,
+        paymentIntent: PaymentIntent
+    ): PaymentResult {
+        return try {
+            println("=== DEBUG: handleMonthlySubscription started ===")
+            println("=== DEBUG: paymentIntent.paymentMethod = ${paymentIntent.paymentMethod} ===")
+
+            val selectedGift = SessionStore.selectedGift
+            val priceId = selectedGift?.stripePriceId
+
+            println("=== DEBUG: selectedGift = $selectedGift ===")
+            println("=== DEBUG: priceId = $priceId ===")
+
+            if (priceId.isNullOrBlank()) {
+                return PaymentResult.Failed("No Stripe Price ID found for monthly product")
+            }
+
+            // Get donor info for customer creation
+            val donorInfo = getDonorInfo(donorId)
+
+            // Create Stripe customer
+            val customerResponse = RetrofitProvider.api.upsertCustomer(
+                com.example.clarity.api.model.CustomerUpsertIn(
+                    email = donorInfo.email,
+                    name = donorInfo.name,
+                    phone = donorInfo.phone,
+                    metadata = mapOf(
+                        "donor_id" to donorId,
+                        "session_id" to sessionId,
+                        "payment_intent_id" to (paymentIntent.id ?: "")
                     )
                 )
             )
-            return false
+
+            // For Terminal payments, we'll create the subscription without a saved payment method
+            // The initial payment was already processed via Terminal
+            val subscriptionResponse = RetrofitProvider.api.createSubscription(
+                com.example.clarity.api.model.SubscriptionCreateIn(
+                    customer_id = customerResponse.customer_id,
+                    price_id = priceId,
+                    session_id = sessionId,
+                    donor_id = donorId,
+                    metadata = mapOf(
+                        "product_id" to (selectedGift?.productId ?: ""),
+                        "amount_cents" to amountCents.toString(),
+                        "currency" to currency,
+                        "initial_payment_intent_id" to (paymentIntent.id ?: ""),
+                        "payment_method" to "terminal_payment"
+                    )
+                )
+            )
+
+            if (subscriptionResponse.status in listOf("active", "incomplete")) {
+                PaymentResult.Success(
+                    paymentIntentId = paymentIntent.id ?: return PaymentResult.Failed("Missing payment intent ID"),
+                    subscriptionId = subscriptionResponse.id
+                )
+            } else {
+                PaymentResult.Failed("Subscription creation failed: ${subscriptionResponse.status}")
+            }
+
+        } catch (e: Exception) {
+            println("=== DEBUG: Exception in handleMonthlySubscription: ${e.message} ===")
+            PaymentResult.Failed("Monthly subscription setup failed: ${e.message}")
         }
     }
 
-    private suspend fun createMonthlySubscription(
+    private suspend fun handleOneTimePayment(
         sessionId: String,
         donorId: String,
         amountCents: Int,
-        currency: String
-    ): Boolean {
-        // Get the selected gift with Stripe Price ID
-        val selectedGift = SessionStore.selectedGift
-        val priceId = selectedGift?.stripePriceId
+        currency: String,
+        paymentIntent: PaymentIntent
+    ): PaymentResult {
+        return try {
+            // Log successful one-time payment
+            RetrofitProvider.api.logEvent(
+                com.example.clarity.api.model.LogEventIn(
+                    event_type = "PAYMENT_COMPLETED",
+                    session_id = sessionId,
+                    donor_id = donorId,
+                    attributes = mapOf(
+                        "payment_intent_id" to (paymentIntent.id ?: ""),
+                        "amount_cents" to amountCents,
+                        "currency" to currency,
+                        "payment_type" to "OTG",
+                        "status" to paymentIntent.status.toString(),
+                        "method" to "tap_to_pay"
+                    )
+                )
+            )
 
-        if (priceId.isNullOrBlank()) {
-            throw Exception("No Stripe Price ID found for selected monthly product")
+            PaymentResult.Success(paymentIntentId = paymentIntent.id ?: return PaymentResult.Failed("Missing payment intent ID"))
+        } catch (e: Exception) {
+            PaymentResult.Failed("One-time payment logging failed: ${e.message}")
         }
-
-        // Get donor info for customer creation
-        val donorInfo = getDonorInfo(donorId)
-
-        // Create Stripe customer
-        val customerResponse = RetrofitProvider.api.upsertCustomer(
-            com.example.clarity.api.model.CustomerUpsertIn(
-                email = donorInfo.email,
-                name = donorInfo.name,
-                phone = donorInfo.phone,
-                metadata = mapOf(
-                    "donor_id" to donorId,
-                    "session_id" to sessionId
-                )
-            )
-        )
-
-        // Create subscription with real Price ID
-        val subscriptionResponse = RetrofitProvider.api.createSubscription(
-            com.example.clarity.api.model.SubscriptionCreateIn(
-                customer_id = customerResponse.customer_id,
-                price_id = priceId,  // Real Stripe Price ID from your PRODUCT table
-                session_id = sessionId,
-                donor_id = donorId,
-                metadata = mapOf(
-                    "product_id" to (selectedGift?.productId ?: ""),
-                    "amount_cents" to amountCents.toString(),
-                    "currency" to currency
-                )
-            )
-        )
-
-        return subscriptionResponse.status in listOf("active", "incomplete")
-    }
-
-    private suspend fun processOneTimePayment(
-        sessionId: String,
-        donorId: String,
-        amountCents: Int,
-        currency: String
-    ): Boolean {
-        // For one-time payments, log completion
-        // In the future, this would use the actual payment intent confirmation
-        RetrofitProvider.api.logEvent(
-            com.example.clarity.api.model.LogEventIn(
-                event_type = "PAYMENT_COMPLETED",
-                session_id = sessionId,
-                donor_id = donorId,
-                attributes = mapOf(
-                    "payment_intent_id" to "pi_simulated_${System.currentTimeMillis()}",
-                    "amount_cents" to amountCents,
-                    "currency" to currency,
-                    "payment_type" to "OTG",
-                    "status" to "succeeded",
-                    "method" to "tap_to_pay_simulation"
-                )
-            )
-        )
-        return true
     }
 
     private suspend fun getDonorInfo(donorId: String): DonorInfo {
@@ -148,10 +315,83 @@ class TapToPayController {
     }
 
     fun isReaderConnected(): Boolean {
-        return true
+        return Terminal.getInstance().connectedReader != null
     }
 
-    fun getConnectedReader() = null
+    fun getConnectedReader(): Reader? {
+        return Terminal.getInstance().connectedReader
+    }
+
+    fun getConnectionStatus(): ConnectionStatus {
+        return Terminal.getInstance().connectionStatus
+    }
+
+    suspend fun registerDevice(context: android.content.Context): Boolean {
+        return try {
+            // Check if device is already registered
+            if (isDeviceRegistered(context)) {
+                return true
+            }
+
+            // Get device identifier
+            val deviceCode = getDeviceIdentifier(context)
+
+            val response = RetrofitProvider.api.registerDevice(
+                DeviceRegistrationIn(
+                    device_code = deviceCode,
+                    location_id = "tml_GMwgTw8OHAJtnR"
+                )
+            )
+
+            // Log successful registration
+            RetrofitProvider.api.logEvent(
+                com.example.clarity.api.model.LogEventIn(
+                    event_type = "DEVICE_REGISTERED",
+                    attributes = mapOf(
+                        "reader_id" to response.reader_id,
+                        "device_type" to response.device_type
+                    )
+                )
+            )
+
+            // Mark device as registered locally
+            markDeviceAsRegistered(context, response.reader_id)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun isDeviceRegistered(context: android.content.Context): Boolean {
+        val prefs = context.getSharedPreferences("stripe_terminal", android.content.Context.MODE_PRIVATE)
+        return prefs.getBoolean("device_registered", false)
+    }
+
+    private fun markDeviceAsRegistered(context: android.content.Context, readerId: String) {
+        val prefs = context.getSharedPreferences("stripe_terminal", android.content.Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean("device_registered", true)
+            .putString("reader_id", readerId)
+            .putLong("registration_timestamp", System.currentTimeMillis())
+            .apply()
+    }
+
+    private fun getDeviceIdentifier(context: android.content.Context): String {
+        return android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        )
+    }
+}
+
+// Result classes
+sealed class PaymentResult {
+    data class Success(
+        val paymentIntentId: String,
+        val subscriptionId: String? = null
+    ) : PaymentResult()
+
+    data class Failed(val error: String) : PaymentResult()
 }
 
 // Data class for donor information
