@@ -1,7 +1,9 @@
 package com.example.clarity.data
 
+/* ---------- Campaign config parsed from /fundraiser/login ---------- */
 data class CampaignCfg(
     val campaignId: String?,
+    val name: String?,
     val currency: String,         // e.g., "CAD"
     val presetAmounts: List<Int>, // IN CENTS
     val minAmount: Int            // IN CENTS
@@ -37,20 +39,20 @@ data class CampaignCfg(
                 toDoubleOrNull(x)?.let { (it * 100.0).toInt() }
 
             val id = (get("CAMPAIGN_ID") as? String) ?: (get("campaign_id") as? String)
+            val name = (get("NAME") as? String) ?: (get("name") as? String)
 
             val currency = ((get("CURRENCY") as? String)
                 ?: (get("currency") as? String) ?: "CAD").uppercase()
 
-            // PRESET_AMOUNTS may be a real array or a string like "[20,30,40,50]"
             val presetsCents = anyToList(get("PRESET_AMOUNTS") ?: get("preset_amounts"))
                 .mapNotNull { dollarsToCentsOrNull(it) }
                 .sorted()
 
-            // MIN_AMOUNT may be 10 (dollars) → convert to 1000 (cents). Default $10 if missing.
             val minCents = dollarsToCentsOrNull(get("MIN_AMOUNT") ?: get("min_amount")) ?: 1000
 
             return CampaignCfg(
                 campaignId = id,
+                name = name,
                 currency = currency,
                 presetAmounts = if (presetsCents.isNotEmpty()) presetsCents else listOf(2000, 3000, 4000, 5000),
                 minAmount = minCents
@@ -59,6 +61,7 @@ data class CampaignCfg(
     }
 }
 
+/* ---------- Donor form snapshot (for prefill/restore) ---------- */
 data class DonorForm(
     val title: String? = null,
     val first: String = "",
@@ -75,33 +78,70 @@ data class DonorForm(
     val country: String = "CA"
 )
 
+/* ---------- Chosen gift for this donor ---------- */
 data class SelectedGift(
     val type: String,      // "MONTHLY" or "OTG"
     val amountCents: Int,
     val currency: String   // e.g., "CAD"
 )
 
+/* ---------- Global session/cache ---------- */
 object SessionStore {
-    // Campaign configuration (parsed from API)
-    var campaign: CampaignCfg? = null
+    // Session
+    var sessionId: String? = null
 
-    // Fundraiser info
+    // Fundraiser
     var fundraiserId: String? = null
     var fundraiserDisplayName: String? = null
     var fundraiserFirst: String? = null
 
-    // Charity info
+    // Charity
     var charityId: String? = null
     var charityName: String = "Your Charity"
     var charityLogoUrl: String? = null
-    var charityBlurb: String? = null   // <- add this
-    var brandPrimaryHex: String? = null // <- already referenced
-
+    var charityBlurb: String? = null
     var charityTermsUrl: String? = null
+    var brandPrimaryHex: String? = null
 
+    // Campaign
+    var campaign: CampaignCfg? = null
+
+    // Donor form (for prefill)
     var donorForm: DonorForm? = null
 
+    // Chosen gift for this donor
     var selectedGift: SelectedGift? = null
 
-}
+    // Donor details cache used across screens (for SMS confirm → NO path)
+    var donorPhoneE164: String? = null
+    var donorEmail: String? = null
+    var donorFullName: String? = null
+    var donorDobIso: String? = null
+    var donorAddressLine: String? = null
 
+    // Communication consents (auto opt-in by default, as requested)
+    var consentSms: Boolean = true
+    var consentEmail: Boolean = true
+    var consentMail: Boolean = true
+
+    /** Clear *only donor-specific* state between donations; keep session/campaign/charity. */
+    fun resetForNextDonor() {
+        // Clear the donor form (so the next donor starts fresh)
+        donorForm = null
+
+        // Clear gift choice
+        selectedGift = null
+
+        // Clear donor caches used for prefill on SMS “NO” route
+        donorPhoneE164 = null
+        donorEmail = null
+        donorFullName = null
+        donorDobIso = null
+        donorAddressLine = null
+
+        // Reset consents back to default on each new donor
+        consentSms = true
+        consentEmail = true
+        consentMail = true
+    }
+}

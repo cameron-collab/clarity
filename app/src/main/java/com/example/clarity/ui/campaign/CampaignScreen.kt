@@ -12,13 +12,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.clarity.data.SessionStore
+import com.example.clarity.ui.theme.Brand
+import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CampaignScreen(
     sessionId: String,
     fundraiserId: String,
     onStartDonation: () -> Unit
 ) {
+    Brand.ApplySystemBars()
     // Pull campaign/charity/fundraiser from the session cache
     val campaign = SessionStore.campaign
     val charityName = SessionStore.charityName ?: "Your Charity"
@@ -44,10 +49,7 @@ fun CampaignScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Top)
         ) {
-            Text(
-                text = "Welcome, ${firstName(fundraiserName)}",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
-            )
+
 
             // Charity card
             Card(
@@ -95,10 +97,25 @@ fun CampaignScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = brandColor),
+                colors = Brand.buttonColors(),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Text("Start Donation", style = MaterialTheme.typography.titleMedium)
+            }
+
+            Spacer(Modifier.weight(1f)) // pushes following to the bottom
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "${SessionStore.charityName} — ${SessionStore.campaign?.name.orEmpty()}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Fundraiser ${SessionStore.fundraiserDisplayName.orEmpty()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

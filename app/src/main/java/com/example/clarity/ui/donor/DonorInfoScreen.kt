@@ -31,6 +31,8 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.random.Random
 import com.example.clarity.data.SessionStore
+import com.example.clarity.ui.theme.Brand
+
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,6 +44,14 @@ fun DonorInfoScreen(
     onNext: (donorId: String, mobileE164: String, email: String, fullName: String, dobIso: String, address: String) -> Unit,
     onBack: () -> Unit
 ) {
+    Brand.ApplySystemBars()
+
+    val tfColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Brand.primaryColor(),
+        focusedLabelColor  = Brand.primaryColor(),
+        cursorColor        = Brand.primaryColor()
+    )
+
     val focus = LocalFocusManager.current
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -118,7 +128,8 @@ fun DonorInfoScreen(
                 title = { Text("Donor Information") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
-                }
+                },
+                colors = Brand.appBarColors()
             )
         }
     ) { pad ->
@@ -147,6 +158,7 @@ fun DonorInfoScreen(
                     onValueChange = { s -> title = s.ifBlank { null } },
                     label = { Text("Title") },
                     singleLine = true,
+                    colors = tfColors,
                     modifier = Modifier.weight(1f),
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Words,
@@ -158,6 +170,7 @@ fun DonorInfoScreen(
                     value = first, onValueChange = { first = it },
                     label = { Text("First") }, singleLine = true,
                     modifier = Modifier.weight(1f),
+                    colors = tfColors,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Words,
                         imeAction = ImeAction.Next
@@ -168,6 +181,7 @@ fun DonorInfoScreen(
                     value = middle, onValueChange = { middle = it },
                     label = { Text("Middle") }, singleLine = true,
                     modifier = Modifier.weight(1f),
+                    colors = tfColors,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Words,
                         imeAction = ImeAction.Next
@@ -178,6 +192,7 @@ fun DonorInfoScreen(
                     value = last, onValueChange = { last = it },
                     label = { Text("Last") }, singleLine = true,
                     modifier = Modifier.weight(1f),
+                    colors = tfColors,
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Words,
                         imeAction = ImeAction.Next
@@ -202,12 +217,13 @@ fun DonorInfoScreen(
                 label = { Text("Date of birth (YYYY-MM-DD)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+                colors = tfColors,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Next
                 ),
                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) }),
-                supportingText = { Text("Type digits only; dashes are added automatically • Double-tap to autofill") }
+                //supportingText = { Text("Type digits only; dashes are added automatically • Double-tap to autofill") }
             )
 
             // Contact
@@ -215,6 +231,7 @@ fun DonorInfoScreen(
                 value = phone, onValueChange = { phone = it },
                 label = { Text("Mobile phone (+1..., etc.)") },
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
+                colors = tfColors,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
             )
@@ -222,6 +239,7 @@ fun DonorInfoScreen(
                 value = email, onValueChange = { email = it },
                 label = { Text("Email") },
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
+                colors = tfColors,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
             )
@@ -231,6 +249,7 @@ fun DonorInfoScreen(
                 value = addr1, onValueChange = { addr1 = it },
                 label = { Text("Address line 1") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+                colors = tfColors,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
             )
@@ -238,6 +257,7 @@ fun DonorInfoScreen(
                 value = addr2, onValueChange = { addr2 = it },
                 label = { Text("Address line 2 (optional)") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+                colors = tfColors,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
             )
@@ -247,6 +267,7 @@ fun DonorInfoScreen(
                     value = city, onValueChange = { city = it },
                     label = { Text("City") }, singleLine = true,
                     modifier = Modifier.weight(1f),
+                    colors = tfColors,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
                 )
@@ -254,6 +275,7 @@ fun DonorInfoScreen(
                     value = region, onValueChange = { region = it.uppercase(Locale.CANADA) },
                     label = { Text("Province/State") }, singleLine = true,
                     modifier = Modifier.weight(1f),
+                    colors = tfColors,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
                 )
@@ -264,6 +286,7 @@ fun DonorInfoScreen(
                     value = postal, onValueChange = { postal = it.uppercase(Locale.CANADA) },
                     label = { Text("Postal/ZIP") }, singleLine = true,
                     modifier = Modifier.weight(1f),
+                    colors = tfColors,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
                 )
@@ -271,6 +294,7 @@ fun DonorInfoScreen(
                     value = country, onValueChange = { country = it.uppercase(Locale.CANADA) },
                     label = { Text("Country") }, singleLine = true,
                     modifier = Modifier.weight(1f),
+                    colors = tfColors,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focus.clearFocus() })
                 )
@@ -352,6 +376,7 @@ fun DonorInfoScreen(
                     }
                 },
                 enabled = !loading,
+                colors = Brand.buttonColors(),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (loading) "Saving…" else "Continue")

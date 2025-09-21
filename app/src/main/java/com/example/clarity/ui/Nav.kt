@@ -170,7 +170,7 @@ fun AppNav() {
             PaymentScreen(
                 sessionId = s,
                 donorId = d,
-                onDone = { nav.navigate(Route.comms(s, d)) },
+                onDone = { nav.navigate(Route.Done) },
                 onBack = { nav.popBackStack() }
             )
         }
@@ -199,6 +199,42 @@ fun AppNav() {
             SignatureScreen(s, d) { nav.navigate(Route.Done) }
         }
 
-        composable(Route.Done) { DoneScreen() }
+        // inside AppNav(), in composable(Route.Done) { ... }
+        composable(Route.Done) {
+            DoneScreen(
+                onStartNextDonation = {
+                    // 1) Clear donor-specific cache
+                    com.example.clarity.data.SessionStore.resetForNextDonor()
+
+                    // 2) Clear any donor_* values left in back stack saved state (best-effort)
+                    val keys = listOf(
+                        "donor_phone_e164",
+                        "donor_email",
+                        "donor_full_name",
+                        "donor_dob",
+                        "donor_address"
+                    )
+                    // Try both previous and current entries (depending on your navigation path)
+                    listOf(nav.previousBackStackEntry, nav.currentBackStackEntry).forEach { entry ->
+                        keys.forEach { k -> entry?.savedStateHandle?.remove<String>(k) }
+                    }
+
+                    // 3) Navigate back to Campaign for the next donor
+                    val session = com.example.clarity.data.SessionStore.sessionId
+                    val fundraiser = com.example.clarity.data.SessionStore.fundraiserId
+                    if (!session.isNullOrBlank() && !fundraiser.isNullOrBlank()) {
+                        nav.navigate(Route.campaign(session, fundraiser)) {
+                            popUpTo(Route.Login) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    } else {
+                        // Fallback if session/fundraiser somehow missing
+                        nav.popBackStack(Route.Login, inclusive = false)
+                    }
+                }
+            )
+        }
+
+
     }
 }
