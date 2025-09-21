@@ -48,4 +48,8 @@ dependencies {
 
     implementation("com.google.accompanist:accompanist-systemuicontroller:0.34.0")
 
+    implementation("com.stripe:stripeterminal-taptopay:4.7.1")
+    implementation("com.stripe:stripeterminal-core:4.7.1")
+
+
 }

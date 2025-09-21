@@ -67,5 +67,9 @@ interface GlobalfacesApi {
     @POST("donor/consent")
     suspend fun updateDonorConsent(@Body body: DonorConsentIn): Map<String, Any?>
 
+    @POST("/terminal/connection_token")
+    suspend fun createTerminalConnectionToken(): ConnectionTokenOut
+    data class ConnectionTokenOut(val secret: String)
+
 
 }

@@ -74,10 +74,6 @@ fun PaymentScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                if (isMonthly) "Monthly Payment" else "One-Time Payment",
-                style = MaterialTheme.typography.headlineSmall
-            )
 
             // Accepted brands / wallets (static icons; replace with real images if you prefer)
             AcceptedRow()
@@ -129,6 +125,9 @@ fun PaymentScreen(
                                     containerColor = Brand.successColor(),         // solid money green
                                     labelColor = Color.White,
                                     leadingIconContentColor = Color.White
+                                ),
+                                border = ButtonDefaults.outlinedButtonBorder().copy(
+                                    brush = androidx.compose.ui.graphics.SolidColor(Brand.successColor())
                                 )
                             )
                         }

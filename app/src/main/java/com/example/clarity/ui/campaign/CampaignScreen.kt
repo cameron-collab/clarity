@@ -112,7 +112,7 @@ fun CampaignScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "Fundraiser ${SessionStore.fundraiserDisplayName.orEmpty()}",
+                    text = "${SessionStore.fundraiserDisplayName.orEmpty()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

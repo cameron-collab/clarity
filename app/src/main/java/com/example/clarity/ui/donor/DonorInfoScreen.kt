@@ -32,15 +32,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.random.Random
 import com.example.clarity.data.SessionStore
 import com.example.clarity.ui.theme.Brand
-
-
+import androidx.compose.ui.text.font.FontWeight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DonorInfoScreen(
     sessionId: String,
     fundraiserId: String,
-    // expanded so Nav.kt can stash extra fields for the SMS
     onNext: (donorId: String, mobileE164: String, email: String, fullName: String, dobIso: String, address: String) -> Unit,
     onBack: () -> Unit
 ) {
@@ -62,7 +60,6 @@ fun DonorInfoScreen(
     var middle by rememberSaveable { mutableStateOf(cached?.middle ?: "") }
     var last by rememberSaveable { mutableStateOf(cached?.last ?: "") }
 
-// dob as TextFieldValue with auto-dashes
     var dobText by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(cached?.dobIso.orEmpty()))
     }
@@ -90,30 +87,22 @@ fun DonorInfoScreen(
         return null
     }
 
-    // ---- Double-tap autofill ----
     fun autofillFake() {
-        // unique-ish email each time
-        val stamp = System.currentTimeMillis() % 1000000
+        val stamp = System.currentTimeMillis() % 1_000_000
         val fakeEmail = "test$stamp@example.com"
-        // required phone (raw); validator will convert to +1416...
         val fakePhone = "4165806454"
-        // DOB > 25 (randomize between 26 and 40 years)
         val years = 26L + Random.nextLong(0, 15)
-        val dob = LocalDate.now().minusYears(years).withDayOfMonth(1) // safe day
-            .minusDays(Random.nextLong(0, 20)) // small variation
+        val dob = LocalDate.now().minusYears(years).withDayOfMonth(1)
+            .minusDays(Random.nextLong(0, 20))
             .format(DateTimeFormatter.ISO_DATE)
 
         title = "Mr."
         first = "Alex"
         middle = "Q"
         last = "Tester"
-
-        // ensure cursor at end with formatted text
         dobText = TextFieldValue(dob, TextRange(dob.length))
-
         phone = fakePhone
         email = fakeEmail
-
         addr1 = "123 Example St"
         addr2 = "Unit 4"
         city = "Toronto"
@@ -127,263 +116,295 @@ fun DonorInfoScreen(
             TopAppBar(
                 title = { Text("Donor Information") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back") }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
                 },
                 colors = Brand.appBarColors()
             )
         }
     ) { pad ->
-        Column(
-            Modifier
-                .padding(pad)
+        // Centered card like Gift screen
+        Box(
+            modifier = Modifier
                 .fillMaxSize()
-                .imePadding()
-                .verticalScroll(scroll)
-                // 👇 double-tap anywhere to autofill
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            autofillFake()
-                            focus.clearFocus()
-                        }
-                    )
-                }
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(pad)
+                .padding(20.dp),
+            contentAlignment = androidx.compose.ui.Alignment.TopCenter
         ) {
-            // Name row (all on one line)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = title ?: "",
-                    onValueChange = { s -> title = s.ifBlank { null } },
-                    label = { Text("Title") },
-                    singleLine = true,
-                    colors = tfColors,
-                    modifier = Modifier.weight(1f),
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-                )
-                OutlinedTextField(
-                    value = first, onValueChange = { first = it },
-                    label = { Text("First") }, singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = tfColors,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-                )
-                OutlinedTextField(
-                    value = middle, onValueChange = { middle = it },
-                    label = { Text("Middle") }, singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = tfColors,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-                )
-                OutlinedTextField(
-                    value = last, onValueChange = { last = it },
-                    label = { Text("Last") }, singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = tfColors,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-                )
-            }
-
-            // DOB with auto-dash formatting + cursor control
-            OutlinedTextField(
-                value = dobText,
-                onValueChange = { incoming ->
-                    val digits = incoming.text.filter { it.isDigit() }.take(8)
-                    val formatted = buildString {
-                        for (i in digits.indices) {
-                            append(digits[i])
-                            if (i == 3 || i == 5) append('-') // YYYY- MM-
-                        }
-                    }
-                    dobText = TextFieldValue(formatted, TextRange(formatted.length))
-                },
-                label = { Text("Date of birth (YYYY-MM-DD)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = tfColors,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) }),
-                //supportingText = { Text("Type digits only; dashes are added automatically • Double-tap to autofill") }
-            )
-
-            // Contact
-            OutlinedTextField(
-                value = phone, onValueChange = { phone = it },
-                label = { Text("Mobile phone (+1..., etc.)") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-                colors = tfColors,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-            )
-            OutlinedTextField(
-                value = email, onValueChange = { email = it },
-                label = { Text("Email") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-                colors = tfColors,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-            )
-
-            // Address
-            OutlinedTextField(
-                value = addr1, onValueChange = { addr1 = it },
-                label = { Text("Address line 1") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = tfColors,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-            )
-            OutlinedTextField(
-                value = addr2, onValueChange = { addr2 = it },
-                label = { Text("Address line 2 (optional)") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = tfColors,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-            )
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = city, onValueChange = { city = it },
-                    label = { Text("City") }, singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = tfColors,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-                )
-                OutlinedTextField(
-                    value = region, onValueChange = { region = it.uppercase(Locale.CANADA) },
-                    label = { Text("Province/State") }, singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = tfColors,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = postal, onValueChange = { postal = it.uppercase(Locale.CANADA) },
-                    label = { Text("Postal/ZIP") }, singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = tfColors,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
-                )
-                OutlinedTextField(
-                    value = country, onValueChange = { country = it.uppercase(Locale.CANADA) },
-                    label = { Text("Country") }, singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    colors = tfColors,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { focus.clearFocus() })
-                )
-            }
-
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = {
-                    focus.clearFocus()
-                    val v = validate()
-                    if (v != null) { error = v; return@Button }
-                    error = null
-                    loading = true
-
-                    scope.launch {
-                        try {
-                            val e164 = phoneE164OrNull(phone)!!
-                            SessionStore.donorForm = com.example.clarity.data.DonorForm(
-                                title = title,
-                                first = first.trim(),
-                                middle = middle.trim(),
-                                last = last.trim(),
-                                dobIso = dobText.text,
-                                phoneRaw = phone.trim(),   // keep raw; you already pass e164 forward separately
-                                email = email.trim(),
-                                addr1 = addr1.trim(),
-                                addr2 = addr2.ifBlank { "" },
-                                city = city.trim(),
-                                region = region.trim(),
-                                postal = postal.trim(),
-                                country = country.trim().ifBlank { "CA" }
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 600.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                colors = Brand.cardColors()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                        .verticalScroll(scroll)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    autofillFake()
+                                    focus.clearFocus()
+                                }
                             )
-                            val out = withContext(Dispatchers.IO) {
-                                RetrofitProvider.api.donorUpsert(
-                                    DonorUpsertIn(
+                        },
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+
+                    // --- Name ---
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = title ?: "",
+                            onValueChange = { s -> title = s.ifBlank { null } },
+                            label = { Text("Title") },
+                            singleLine = true,
+                            colors = tfColors,
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                        OutlinedTextField(
+                            value = first, onValueChange = { first = it },
+                            label = { Text("First") }, singleLine = true,
+                            colors = tfColors,
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                        OutlinedTextField(
+                            value = middle, onValueChange = { middle = it },
+                            label = { Text("Middle") }, singleLine = true,
+                            colors = tfColors,
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                        OutlinedTextField(
+                            value = last, onValueChange = { last = it },
+                            label = { Text("Last") }, singleLine = true,
+                            colors = tfColors,
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                    }
+
+                    // --- Contact ---
+                    OutlinedTextField(
+                        value = phone, onValueChange = { phone = it },
+                        label = { Text("Mobile phone (+1..., etc.)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = tfColors,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                    )
+                    OutlinedTextField(
+                        value = email, onValueChange = { email = it },
+                        label = { Text("Email") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = tfColors,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                    )
+
+                    // --- Address ---
+                    OutlinedTextField(
+                        value = addr1, onValueChange = { addr1 = it },
+                        label = { Text("Address line 1") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = tfColors,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                    )
+                    OutlinedTextField(
+                        value = addr2, onValueChange = { addr2 = it },
+                        label = { Text("Address line 2 (optional)") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = tfColors,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = city, onValueChange = { city = it },
+                            label = { Text("City") }, singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = tfColors,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                        OutlinedTextField(
+                            value = region, onValueChange = { region = it.uppercase(Locale.CANADA) },
+                            label = { Text("Province/State") }, singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = tfColors,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = postal, onValueChange = { postal = it.uppercase(Locale.CANADA) },
+                            label = { Text("Postal/ZIP") }, singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = tfColors,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                        OutlinedTextField(
+                            value = country, onValueChange = { country = it.uppercase(Locale.CANADA) },
+                            label = { Text("Country") }, singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = tfColors,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            keyboardActions = KeyboardActions(onNext = { focus.moveFocus(FocusDirection.Next) })
+                        )
+                    }
+
+                    // --- Date of Birth MOVED TO BOTTOM ---
+                    OutlinedTextField(
+                        value = dobText,
+                        onValueChange = { incoming ->
+                            val digits = incoming.text.filter { it.isDigit() }.take(8)
+                            val formatted = buildString {
+                                for (i in digits.indices) {
+                                    append(digits[i])
+                                    if (i == 3 || i == 5) append('-')
+                                }
+                            }
+                            dobText = TextFieldValue(formatted, TextRange(formatted.length))
+                        },
+                        label = { Text("Date of Birth (YYYY-MM-DD)") },
+                        placeholder = { Text("1995-02-24") },  // example shown inside the field
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = tfColors,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = { focus.clearFocus() })
+                    )
+
+
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+                    Button(
+                        onClick = {
+                            focus.clearFocus()
+                            val v = validate()
+                            if (v != null) { error = v; return@Button }
+                            error = null
+                            loading = true
+
+                            scope.launch {
+                                try {
+                                    val e164 = phoneE164OrNull(phone)!!
+                                    SessionStore.donorForm = com.example.clarity.data.DonorForm(
                                         title = title,
-                                        first_name = first.trim(),
-                                        middle_name = middle.ifBlank { null },
-                                        last_name = last.trim(),
-                                        dob_iso = dobText.text,      // already YYYY-MM-DD
-                                        mobile_e164 = e164,
+                                        first = first.trim(),
+                                        middle = middle.trim(),
+                                        last = last.trim(),
+                                        dobIso = dobText.text,
+                                        phoneRaw = phone.trim(),
                                         email = email.trim(),
-                                        address1 = addr1.trim(),
-                                        address2 = addr2.ifBlank { null },
+                                        addr1 = addr1.trim(),
+                                        addr2 = addr2.ifBlank { "" },
                                         city = city.trim(),
                                         region = region.trim(),
-                                        postal_code = postal.trim(),
-                                        country = country.trim(),
-                                        fundraiser_id = fundraiserId,
-                                        session_id = sessionId
+                                        postal = postal.trim(),
+                                        country = country.trim().ifBlank { "CA" }
                                     )
-                                )
+                                    val out = withContext(Dispatchers.IO) {
+                                        RetrofitProvider.api.donorUpsert(
+                                            DonorUpsertIn(
+                                                title = title,
+                                                first_name = first.trim(),
+                                                middle_name = middle.ifBlank { null },
+                                                last_name = last.trim(),
+                                                dob_iso = dobText.text,
+                                                mobile_e164 = e164,
+                                                email = email.trim(),
+                                                address1 = addr1.trim(),
+                                                address2 = addr2.ifBlank { null },
+                                                city = city.trim(),
+                                                region = region.trim(),
+                                                postal_code = postal.trim(),
+                                                country = country.trim(),
+                                                fundraiser_id = fundraiserId,
+                                                session_id = sessionId
+                                            )
+                                        )
+                                    }
+
+                                    val fullName = listOfNotNull(
+                                        title?.takeIf { it.isNotBlank() },
+                                        first.trim(),
+                                        middle.trim().takeIf { it.isNotBlank() },
+                                        last.trim()
+                                    ).joinToString(" ")
+
+                                    val addressLine = buildString {
+                                        append(addr1.trim())
+                                        if (addr2.isNotBlank()) append(", ${addr2.trim()}")
+                                        append(", ${city.trim()}, ${region.trim()} ${postal.trim()}, ${country.trim()}")
+                                    }
+
+                                    onNext(out.donor_id, e164, email.trim(), fullName, dobText.text, addressLine)
+                                } catch (ex: retrofit2.HttpException) {
+                                    error = try { ex.response()?.errorBody()?.string() ?: ex.message() }
+                                    catch (_: Exception) { ex.message() }
+                                } catch (ex: Exception) {
+                                    error = ex.message
+                                } finally {
+                                    loading = false
+                                }
                             }
-
-                            val fullName = listOfNotNull(
-                                title?.takeIf { it.isNotBlank() },
-                                first.trim(),
-                                middle.trim().takeIf { it.isNotBlank() },
-                                last.trim()
-                            ).joinToString(" ")
-
-                            val addressLine = buildString {
-                                append(addr1.trim())
-                                if (addr2.isNotBlank()) append(", ${addr2.trim()}")
-                                append(", ${city.trim()}, ${region.trim()} ${postal.trim()}, ${country.trim()}")
-                            }
-
-                            onNext(out.donor_id, e164, email.trim(), fullName, dobText.text, addressLine)
-                        } catch (ex: retrofit2.HttpException) {
-                            error = try { ex.response()?.errorBody()?.string() ?: ex.message() }
-                            catch (_: Exception) { ex.message() }
-                        } catch (ex: Exception) {
-                            error = ex.message
-                        } finally {
-                            loading = false
-                        }
+                        },
+                        enabled = !loading,
+                        colors = Brand.buttonColors(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                    ) {
+                        Text(if (loading) "Saving…" else "Continue")
                     }
-                },
-                enabled = !loading,
-                colors = Brand.buttonColors(),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (loading) "Saving…" else "Continue")
+                }
             }
         }
     }
 }
+
+/* --- Tiny composable used above --- */
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
 
 /** Helpers **/
 
