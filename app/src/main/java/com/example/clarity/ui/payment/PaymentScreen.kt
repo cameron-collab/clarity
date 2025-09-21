@@ -2,11 +2,6 @@
 
 package com.example.clarity.ui.payment
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.nfc.NfcAdapter
-import android.nfc.Tag
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.clarity.api.RetrofitProvider
+import com.example.clarity.api.payment.TapToPayController
 import com.example.clarity.data.SessionStore
 import com.example.clarity.ui.theme.Brand
 import kotlinx.coroutines.Dispatchers
@@ -44,32 +40,26 @@ fun PaymentScreen(
     Brand.ApplySystemBars()
 
     val scope = rememberCoroutineScope()
-    val ctx = LocalContext.current
-    val activity = remember(ctx) { ctx.findActivity() }
+    val tapToPayController = remember { TapToPayController() }
 
     val gift = SessionStore.selectedGift
     val isMonthly = (gift?.type ?: "OTG").equals("MONTHLY", ignoreCase = true)
     val amountCents = gift?.amountCents ?: 2000
     val currency = (gift?.currency ?: "CAD").lowercase()
 
-    var cardCaptured by remember { mutableStateOf(false) }
-    var capturing by remember { mutableStateOf(false) }
+    // Payment flow states
+    var paymentInProgress by remember { mutableStateOf(false) }
+    var paymentCompleted by remember { mutableStateOf(false) }
     var signed by remember { mutableStateOf(false) }
     var submitBusy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var successMsg by remember { mutableStateOf<String?>(null) }
+    var statusMsg by remember { mutableStateOf("Ready to start payment") }
 
+    // Communication preferences
     var smsConsent by remember { mutableStateOf(true) }
     var emailConsent by remember { mutableStateOf(true) }
     var mailConsent by remember { mutableStateOf(true) }
-
-    // NFC adapter (null if device has no NFC)
-    val nfcAdapter: NfcAdapter? = remember(activity) { activity?.let { NfcAdapter.getDefaultAdapter(it) } }
-
-    // Make sure we turn reader mode off if the composable leaves
-    DisposableEffect(activity) {
-        onDispose { disableReaderMode(activity) }
-    }
 
     Scaffold(
         topBar = {
@@ -88,7 +78,7 @@ fun PaymentScreen(
         ) {
             AcceptedRow()
 
-            // Tap to pay (NFC detector only)
+            // Stripe Terminal Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -98,70 +88,75 @@ fun PaymentScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Tap your card", style = MaterialTheme.typography.titleMedium)
+                    Text("Tap to Pay", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "This simply opens NFC reader mode. When any contactless card/phone is detected, we’ll mark success. No details are saved; no payment is attempted.",
-                        style = MaterialTheme.typography.bodySmall
+                        "Amount: ${String.format("%.2f", amountCents / 100.0)} ${currency.uppercase()}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
                     )
 
-                    val nfcAvailable = nfcAdapter != null && (nfcAdapter?.isEnabled == true)
-                    if (!nfcAvailable) {
-                        Text(
-                            "NFC not available or disabled on this device.",
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
+                    Text(statusMsg, style = MaterialTheme.typography.bodySmall)
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            enabled = !capturing && nfcAvailable,
+                        // Start Payment Button (simplified - uses backend)
+                        Button(
+                            enabled = !paymentInProgress && !paymentCompleted,
                             onClick = {
+                                paymentInProgress = true
+                                statusMsg = "Creating payment intent..."
                                 error = null
-                                successMsg = null
-                                cardCaptured = false
 
-                                val act = activity
-                                if (act == null) {
-                                    error = "No activity context for NFC."
-                                    return@OutlinedButton
-                                }
+                                scope.launch {
+                                    try {
+                                        // Create payment intent via backend
+                                        val clientSecret = tapToPayController.createPaymentIntent(
+                                            amountCents = amountCents,
+                                            currency = currency,
+                                            sessionId = sessionId,
+                                            donorId = donorId
+                                        )
 
-                                val ok = enableReaderMode(
-                                    act,
-                                    onTag = { _ ->
-                                        // Tag discovered — flip success and stop reading
-                                        act.runOnUiThread {
-                                            cardCaptured = true
-                                            capturing = false
-                                            successMsg = "✅ NFC card detected."
-                                            disableReaderMode(act)
+                                        statusMsg = "Processing payment..."
+
+                                        // Process payment with database logging
+                                        val success = tapToPayController.collectAndConfirmPayment(
+                                            clientSecret,
+                                            sessionId,
+                                            donorId,
+                                            isMonthly,
+                                            amountCents,
+                                            currency//,
+                                            //SessionStore.campaign?.campaignId ?: ""
+                                        )
+
+                                        if (success) {
+                                            paymentCompleted = true
+                                            paymentInProgress = false
+                                            statusMsg = "Payment successful!"
+                                            successMsg = "Payment completed successfully"
+                                        } else {
+                                            error = "Payment was declined"
+                                            statusMsg = "Payment failed"
+                                            paymentInProgress = false
                                         }
-                                    },
-                                    onError = { e ->
-                                        act.runOnUiThread {
-                                            capturing = false
-                                            error = e ?: "NFC read failed."
-                                            disableReaderMode(act)
-                                        }
+
+                                    } catch (e: Exception) {
+                                        error = "Payment failed: ${e.message}"
+                                        statusMsg = "Payment failed"
+                                        paymentInProgress = false
                                     }
-                                )
-                                capturing = ok
-                                if (!ok) error = "Failed to enable NFC reader mode."
+                                }
                             },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Brand.primaryColor()
-                            ),
-                            border = ButtonDefaults.outlinedButtonBorder().copy(
-                                brush = androidx.compose.ui.graphics.SolidColor(Brand.primaryColor())
-                            )
+                            colors = Brand.buttonColors()
                         ) {
-                            Text(if (capturing) "Waiting for tap…" else "Tap Card (Test)")
+                            Text(if (paymentInProgress) "Processing..." else "Start Payment")
                         }
 
-                        if (cardCaptured) {
+                        // Success indicator
+                        if (paymentCompleted) {
                             AssistChip(
                                 onClick = {},
-                                label = { Text("Card captured") },
+                                label = { Text("Payment Complete") },
                                 leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
                                 colors = AssistChipDefaults.assistChipColors(
                                     containerColor = Brand.successColor(),
@@ -225,11 +220,11 @@ fun PaymentScreen(
                 onSignedChanged = { signed = it }
             )
 
-            // Submit (placeholder; same gating as before)
+            // Submit Button
             val primaryCta = if (isMonthly)
-                "Submit first payment & schedule"
+                "Complete Monthly Setup"
             else
-                "Submit $${"%.2f".format(amountCents / 100.0)} ${currency.uppercase()}"
+                "Complete Donation"
 
             Button(
                 onClick = {
@@ -237,10 +232,18 @@ fun PaymentScreen(
                     submitBusy = true
                     scope.launch {
                         try {
-                            if (!cardCaptured) { error = "Please tap a card first."; return@launch }
-                            if (!signed) { error = "Signature required."; return@launch }
+                            if (!paymentCompleted) {
+                                error = "Please complete payment first."
+                                submitBusy = false
+                                return@launch
+                            }
+                            if (!signed) {
+                                error = "Signature required."
+                                submitBusy = false
+                                return@launch
+                            }
 
-                            // Best-effort: save consents
+                            // Save consents
                             try {
                                 withContext(Dispatchers.IO) {
                                     RetrofitProvider.api.updateDonorConsent(
@@ -254,20 +257,23 @@ fun PaymentScreen(
                                     )
                                 }
                             } catch (e: Exception) {
-                                error = "Saved payment, but failed to store communication preferences: ${e.message}"
+                                error = "Failed to store communication preferences: ${e.message}"
+                                submitBusy = false
+                                return@launch
                             }
 
-                            // Placeholder success
-                            successMsg = "Card detected & signed. (No payment attempted.)"
+                            // No need to disconnect reader in simplified version
+
+                            successMsg = "Transaction completed successfully!"
                             onDone()
                         } catch (e: Exception) {
-                            error = e.message ?: "Payment failed."
+                            error = e.message ?: "Failed to complete transaction."
                         } finally {
                             submitBusy = false
                         }
                     }
                 },
-                enabled = cardCaptured && signed && !submitBusy,
+                enabled = paymentCompleted && signed && !submitBusy,
                 colors = Brand.buttonColors(),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -276,59 +282,13 @@ fun PaymentScreen(
                 Text(if (submitBusy) "Processing…" else primaryCta)
             }
 
-            successMsg?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            successMsg?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Brand.successColor()) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
 }
 
-/* ---------- NFC helpers ---------- */
-
-private fun enableReaderMode(
-    activity: Activity,
-    onTag: (Tag) -> Unit,
-    onError: (String?) -> Unit
-): Boolean {
-    val adapter = NfcAdapter.getDefaultAdapter(activity) ?: return false
-    if (!adapter.isEnabled) return false
-
-    val flags =
-        NfcAdapter.FLAG_READER_NFC_A or      // Most contactless credit cards
-                NfcAdapter.FLAG_READER_NFC_B or
-                NfcAdapter.FLAG_READER_NFC_F or
-                NfcAdapter.FLAG_READER_NFC_V or
-                NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
-
-    adapter.enableReaderMode(
-        activity,
-        NfcAdapter.ReaderCallback { tag ->
-            try {
-                onTag(tag)
-            } catch (t: Throwable) {
-                onError(t.message)
-            }
-        },
-        flags,
-        null
-    )
-    return true
-}
-
-private fun disableReaderMode(activity: Activity?) {
-    try {
-        val adapter = activity?.let { NfcAdapter.getDefaultAdapter(it) } ?: return
-        adapter.disableReaderMode(activity)
-    } catch (_: Throwable) { /* no-op */ }
-}
-
-/* ---------- Small utilities ---------- */
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
-
+// Keep existing helper functions...
 @Composable
 private fun AcceptedRow() {
     Row(
@@ -351,8 +311,6 @@ private fun AcceptedRow() {
         }
     }
 }
-
-/* ---------------- Signature Pad ---------------- */
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -382,7 +340,6 @@ private fun SignaturePad(
                     )
                 }
         ) {
-            // existing strokes
             paths.forEach { stroke ->
                 if (stroke.size > 1) {
                     for (i in 0 until stroke.size - 1) {
@@ -396,7 +353,6 @@ private fun SignaturePad(
                     }
                 }
             }
-            // live stroke
             if (currentPath.size > 1) {
                 for (i in 0 until currentPath.size - 1) {
                     drawLine(

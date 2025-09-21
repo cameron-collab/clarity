@@ -81,3 +81,17 @@ data class LogEventIn(
     val fundraiser_id: String? = null,
     val attributes: Map<String, Any?> = emptyMap()
 )
+
+data class TerminalPaymentIntentIn(
+    val amount: Int,
+    val currency: String = "cad",
+    val session_id: String? = null,
+    val donor_id: String? = null,
+    val location_id: String? = null
+)
+
+data class TerminalPaymentIntentOut(
+    val id: String,
+    val client_secret: String,
+    val status: String
+)

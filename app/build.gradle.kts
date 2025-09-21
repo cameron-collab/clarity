@@ -1,7 +1,7 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -10,14 +10,13 @@ android {
 
     defaultConfig {
         applicationId = "com.example.clarity"
-        minSdk = 26           // ← not 33
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
     }
 
     buildFeatures { compose = true }
-    //composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -27,29 +26,32 @@ android {
 }
 
 dependencies {
-    implementation("androidx.activity:activity-compose:1.9.2")
-    implementation("androidx.compose.ui:ui:1.7.2")
-    implementation("androidx.compose.material3:material3:1.3.0")
-    implementation("androidx.navigation:navigation-compose:2.8.0")
+    // Compose BOM - manages all Compose library versions automatically
+    implementation(platform(libs.compose.bom))
 
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.icons.extended)
+    implementation(libs.compose.foundation)
+    implementation(libs.navigation.compose)
 
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.moshi)
+    implementation(libs.okhttp)
+    implementation(libs.moshi.kotlin)
+    implementation(libs.coroutines.android)
 
-    implementation("androidx.compose.material:material-icons-extended:1.7.2")
+    implementation(libs.coil.compose)
+    implementation(libs.accompanist.systemui)
 
-    implementation("androidx.compose.foundation:foundation:1.7.2")
+    // Stripe Terminal
+    implementation(libs.stripe.terminal.core)
+    implementation(libs.stripe.terminal.taptopay)
 
-    implementation("io.coil-kt:coil-compose:2.6.0")
-
-    implementation("com.google.accompanist:accompanist-systemuicontroller:0.34.0")
-
-    implementation("com.stripe:stripeterminal-taptopay:4.7.1")
-    implementation("com.stripe:stripeterminal-core:4.7.1")
-
-
+    // Test dependencies
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
 }

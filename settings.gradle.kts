@@ -16,7 +16,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://maven.stripe.com/android-releases") }
+        maven { url = uri("https://maven.stripe.com/releases") }
+        maven { url = uri("https://maven.stripe.com/android") }
     }
 }
 

@@ -1,5 +1,6 @@
 package com.example.clarity
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,12 +9,12 @@ import androidx.compose.material3.Surface
 import com.example.clarity.ui.AppNav
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
-                Surface { AppNav() }
-            }
+            MaterialTheme { Surface { AppNav() } }
         }
     }
+
 }

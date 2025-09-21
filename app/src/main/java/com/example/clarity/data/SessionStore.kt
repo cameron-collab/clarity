@@ -79,10 +79,13 @@ data class DonorForm(
 )
 
 /* ---------- Chosen gift for this donor ---------- */
+/* ---------- Chosen gift for this donor ---------- */
 data class SelectedGift(
     val type: String,      // "MONTHLY" or "OTG"
     val amountCents: Int,
-    val currency: String   // e.g., "CAD"
+    val currency: String,   // e.g., "CAD"
+    val productId: String? = null,        // Product ID from PRODUCT table (for monthly)
+    val stripePriceId: String? = null     // Stripe Price ID (for monthly subscriptions)
 )
 
 /* ---------- Global session/cache ---------- */

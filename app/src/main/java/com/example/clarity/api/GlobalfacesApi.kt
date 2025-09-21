@@ -20,6 +20,7 @@ import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Path
 
 data class FundraiserLoginIn(val fundraiser_id: String)
 data class FundraiserLoginOut(
@@ -28,7 +29,31 @@ data class FundraiserLoginOut(
     val charity: Map<String, Any?>?,
     val campaign: Map<String, Any?>?
 )
+data class ProductLookupOut(
+    val stripe_price_id: String,
+    val product_id: String,
+    val display_name: String
+)
 
+data class DonorOut(
+    val email: String,
+    val name: String,
+    val phone: String?
+)
+
+data class CampaignProductsOut(
+    val products: List<ProductOut>
+)
+
+data class ProductOut(
+    val product_id: String,
+    val product_type: String,
+    val amount_cents: Int,
+    val currency: String,
+    val display_name: String,
+    val stripe_price_id: String?,
+    val active: Boolean
+)
 interface GlobalfacesApi {
     @POST("fundraiser/login")
     suspend fun login(@Body body: FundraiserLoginIn): FundraiserLoginOut
@@ -70,6 +95,22 @@ interface GlobalfacesApi {
     @POST("/terminal/connection_token")
     suspend fun createTerminalConnectionToken(): ConnectionTokenOut
     data class ConnectionTokenOut(val secret: String)
+
+    //@POST("/terminal/payment_intent")
+    //suspend fun createTerminalPaymentIntent(@Body body: TerminalPaymentIntentIn): TerminalPaymentIntentOut
+    @GET("/products/lookup")
+    suspend fun lookupProduct(
+        @Query("campaign_id") campaignId: String,
+        @Query("amount_cents") amountCents: Int,
+        @Query("currency") currency: String,
+        @Query("product_type") productType: String = "MONTHLY"
+    ): ProductLookupOut
+
+    @GET("/donor/{donor_id}")
+    suspend fun getDonor(@Path("donor_id") donorId: String): DonorOut
+
+    @GET("/products/campaign/{campaign_id}")
+    suspend fun getCampaignProducts(@Path("campaign_id") campaignId: String): CampaignProductsOut
 
 
 }

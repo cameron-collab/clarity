@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.clarity.api.RetrofitProvider
 import com.example.clarity.api.model.SendSmsIn
+import com.example.clarity.api.ProductOut
 import com.example.clarity.data.SelectedGift
 import com.example.clarity.data.SessionStore
 import com.example.clarity.ui.theme.Brand
@@ -21,6 +22,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.Box
+
+
+private val MoneyChipWidth = 96.dp
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,19 +45,57 @@ fun GiftScreen(
     val minOtgCents = campaign?.minAmount ?: 1000
     val charityName = SessionStore.charityName
 
+    // Products state
+    var monthlyProducts by remember { mutableStateOf<List<ProductOut>>(emptyList()) }
+    var productsLoading by remember { mutableStateOf(false) }
+    var productsError by remember { mutableStateOf<String?>(null) }
+
+    // Load products when screen opens
+    LaunchedEffect(campaign?.campaignId) {
+        val campaignId = campaign?.campaignId
+        if (!campaignId.isNullOrBlank()) {
+            productsLoading = true
+            productsError = null
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    RetrofitProvider.api.getCampaignProducts(campaignId)
+                }
+                monthlyProducts = response.products.filter { it.product_type == "MONTHLY" }
+            } catch (e: Exception) {
+                productsError = "Failed to load products: ${e.message}"
+                // Fallback to campaign presets if product loading fails
+                monthlyProducts = emptyList()
+            } finally {
+                productsLoading = false
+            }
+        }
+    }
+
     // --- UI state ---
     var isMonthly by remember { mutableStateOf(true) }
-    var selectedCents by remember { mutableStateOf(campaign?.presetAmounts?.firstOrNull() ?: 2000) }
+    var selectedProductId by remember { mutableStateOf<String?>(null) }
+    var selectedCents by remember { mutableStateOf(monthlyProducts.firstOrNull()?.amount_cents ?: 2000) }
     var otgAmountInput by remember { mutableStateOf("") } // dollars text
     var sending by remember { mutableStateOf(false) }
     var polling by remember { mutableStateOf(false) }
     var statusNote by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // Update selected amount when products load
+    LaunchedEffect(monthlyProducts) {
+        if (monthlyProducts.isNotEmpty() && selectedProductId == null) {
+            val firstProduct = monthlyProducts.first()
+            selectedProductId = firstProduct.product_id
+            selectedCents = firstProduct.amount_cents
+        }
+    }
+
     // Terms & Conditions
     val termsUrl = SessionStore.charityTermsUrl.orEmpty()
     var termsAgreed by remember { mutableStateOf(false) }
     var showTermsDialog by remember { mutableStateOf(false) }
+
+    val MoneyChipWidth = 96.dp
 
     fun otgDollarsToCentsOrNull(txt: String): Int? {
         val dollars = txt.trim().toDoubleOrNull() ?: return null
@@ -61,7 +105,8 @@ fun GiftScreen(
     LaunchedEffect(isMonthly) {
         error = null
         if (isMonthly) {
-            selectedCents = campaign?.presetAmounts?.firstOrNull() ?: 2000
+            // Use first product if available, else fallback
+            selectedCents = monthlyProducts.firstOrNull()?.amount_cents ?: campaign?.presetAmounts?.firstOrNull() ?: 2000
         } else {
             otgAmountInput = "%.0f".format(minOtgCents / 100.0)
         }
@@ -145,32 +190,75 @@ fun GiftScreen(
                     }
 
                     if (isMonthly) {
-                        // Monthly preset chips
-                        val presets = campaign?.presetAmounts?.takeIf { it.isNotEmpty() }
-                            ?: listOf(2000, 3000, 4000, 5000)
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text("Choose monthly amount", style = MaterialTheme.typography.titleMedium)
-                            presets.chunked(5).forEach { row ->
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    row.forEach { cents ->
-                                        val selected = selectedCents == cents
-                                        FilterChip(
-                                            selected = selected,
-                                            onClick = { selectedCents = cents },
-                                            label = { Text(centsToLabel(cents, currency)) },
-                                            colors = Brand.chipColors()
-                                        )
+
+                            when {
+                                productsLoading -> {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = Brand.primaryColor()
+                                    )
+                                    Text("Loading products...", style = MaterialTheme.typography.bodySmall)
+                                }
+
+                                productsError != null -> {
+                                    Text(
+                                        "Error loading products: $productsError",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+
+                                monthlyProducts.isEmpty() -> {
+                                    Text(
+                                        "No monthly products configured for this campaign.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                else -> {
+                                    // show 2–5 equal-width centered chips (no fallbacks)
+                                    val displayProducts = monthlyProducts.take(5)
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        displayProducts.forEach { product ->
+                                            val selected = selectedProductId == product.product_id
+                                            FilterChip(
+                                                selected = selected,
+                                                onClick = {
+                                                    selectedProductId = product.product_id
+                                                    selectedCents = product.amount_cents
+                                                },
+                                                // ⬇️ Center the text inside the chip
+                                                label = {
+                                                    Box(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(centsToChip(product.amount_cents))
+                                                    }
+                                                },
+                                                colors = Brand.chipColors(),
+                                                modifier = Modifier.width(MoneyChipWidth) // equal width for all chips
+                                            )
+                                        }
                                     }
+
+
                                 }
                             }
                         }
-                    } else {
+                    }
+                    else {
                         // One-time entry
                         Column(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -216,8 +304,10 @@ fun GiftScreen(
                                 return@Button
                             }
                             val (giftType, amountCents) =
-                                if (isMonthly) "MONTHLY" to selectedCents
-                                else {
+                                if (isMonthly) {
+                                    // Use selected product amount
+                                    "MONTHLY" to selectedCents
+                                } else {
                                     val cents = otgDollarsToCentsOrNull(otgAmountInput)
                                     if (cents == null) {
                                         error = "Enter a valid one-time amount."
@@ -245,10 +335,16 @@ fun GiftScreen(
                                         currency = currency,
                                         preview_message = null
                                     )
+
+                                    // Store selected gift with product information
                                     SessionStore.selectedGift = SelectedGift(
                                         type = giftType,
                                         amountCents = amountCents,
-                                        currency = currency
+                                        currency = currency,
+                                        productId = if (isMonthly) selectedProductId else null,
+                                        stripePriceId = if (isMonthly && selectedProductId != null) {
+                                            monthlyProducts.find { it.product_id == selectedProductId }?.stripe_price_id
+                                        } else null
                                     )
                                     withContext(Dispatchers.IO) { RetrofitProvider.api.sendSms(body) }
                                     polling = true
@@ -298,7 +394,7 @@ private fun TermsAndConditionsBlock(
         ) {
             Text("Terms & Conditions", style = MaterialTheme.typography.titleMedium)
             if (termsUrl.isNotBlank()) {
-                TextButton(onClick = onOpen) { Text("View") }
+                TextButton(onClick = onOpen, colors = ButtonDefaults.textButtonColors(contentColor = Brand.primaryColor())) { Text("View") }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -370,4 +466,9 @@ private fun TermsWebView(url: String) {
 private fun centsToLabel(cents: Int, currency: String): String {
     val d = cents / 100.0
     return "$" + (if (d % 1.0 == 0.0) "%.0f" else "%.2f").format(d) + " $currency"
+}
+
+private fun centsToChip(cents: Int): String {
+    val d = cents / 100.0
+    return "$" + if (d % 1.0 == 0.0) "%.0f".format(d) else "%.2f".format(d)
 }
