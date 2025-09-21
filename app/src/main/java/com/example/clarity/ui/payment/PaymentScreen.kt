@@ -2,10 +2,15 @@
 
 package com.example.clarity.ui.payment
 
-import android.graphics.Path
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.nfc.NfcAdapter
+import android.nfc.Tag
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,16 +24,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.clarity.api.RetrofitProvider
 import com.example.clarity.data.SessionStore
+import com.example.clarity.ui.theme.Brand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.ui.text.font.FontWeight
-import com.example.clarity.ui.theme.Brand
-
 
 @Composable
 fun PaymentScreen(
@@ -37,16 +41,18 @@ fun PaymentScreen(
     onDone: () -> Unit,
     onBack: () -> Unit
 ) {
-
     Brand.ApplySystemBars()
 
     val scope = rememberCoroutineScope()
+    val ctx = LocalContext.current
+    val activity = remember(ctx) { ctx.findActivity() }
+
     val gift = SessionStore.selectedGift
     val isMonthly = (gift?.type ?: "OTG").equals("MONTHLY", ignoreCase = true)
     val amountCents = gift?.amountCents ?: 2000
     val currency = (gift?.currency ?: "CAD").lowercase()
 
-    var cardCaptured by remember { mutableStateOf(false) }   // placeholder for tap result
+    var cardCaptured by remember { mutableStateOf(false) }
     var capturing by remember { mutableStateOf(false) }
     var signed by remember { mutableStateOf(false) }
     var submitBusy by remember { mutableStateOf(false) }
@@ -57,12 +63,18 @@ fun PaymentScreen(
     var emailConsent by remember { mutableStateOf(true) }
     var mailConsent by remember { mutableStateOf(true) }
 
+    // NFC adapter (null if device has no NFC)
+    val nfcAdapter: NfcAdapter? = remember(activity) { activity?.let { NfcAdapter.getDefaultAdapter(it) } }
+
+    // Make sure we turn reader mode off if the composable leaves
+    DisposableEffect(activity) {
+        onDispose { disableReaderMode(activity) }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(if (isMonthly) "Monthly Payment" else "One-Time Payment")
-                },
+                title = { Text(if (isMonthly) "Monthly Payment" else "One-Time Payment") },
                 colors = Brand.appBarColors()
             )
         }
@@ -74,11 +86,9 @@ fun PaymentScreen(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
-            // Accepted brands / wallets (static icons; replace with real images if you prefer)
             AcceptedRow()
 
-            // Tap to pay (placeholder)
+            // Tap to pay (NFC detector only)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -88,25 +98,55 @@ fun PaymentScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
+                    Text("Tap your card", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Tap your card (placeholder)",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        "We’ll integrate Stripe Tap to Pay or PaymentSheet here. " +
-                                "For now, tap 'Simulate tap success' to continue.",
+                        "This simply opens NFC reader mode. When any contactless card/phone is detected, we’ll mark success. No details are saved; no payment is attempted.",
                         style = MaterialTheme.typography.bodySmall
                     )
+
+                    val nfcAvailable = nfcAdapter != null && (nfcAdapter?.isEnabled == true)
+                    if (!nfcAvailable) {
+                        Text(
+                            "NFC not available or disabled on this device.",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
-                            enabled = !capturing,
+                            enabled = !capturing && nfcAvailable,
                             onClick = {
-                                // simulate tap flow
-                                capturing = true
                                 error = null
-                                // …do nothing async here; in real flow you’d invoke Stripe SDK
-                                cardCaptured = true
-                                capturing = false
+                                successMsg = null
+                                cardCaptured = false
+
+                                val act = activity
+                                if (act == null) {
+                                    error = "No activity context for NFC."
+                                    return@OutlinedButton
+                                }
+
+                                val ok = enableReaderMode(
+                                    act,
+                                    onTag = { _ ->
+                                        // Tag discovered — flip success and stop reading
+                                        act.runOnUiThread {
+                                            cardCaptured = true
+                                            capturing = false
+                                            successMsg = "✅ NFC card detected."
+                                            disableReaderMode(act)
+                                        }
+                                    },
+                                    onError = { e ->
+                                        act.runOnUiThread {
+                                            capturing = false
+                                            error = e ?: "NFC read failed."
+                                            disableReaderMode(act)
+                                        }
+                                    }
+                                )
+                                capturing = ok
+                                if (!ok) error = "Failed to enable NFC reader mode."
                             },
                             colors = ButtonDefaults.outlinedButtonColors(
                                 contentColor = Brand.primaryColor()
@@ -114,7 +154,9 @@ fun PaymentScreen(
                             border = ButtonDefaults.outlinedButtonBorder().copy(
                                 brush = androidx.compose.ui.graphics.SolidColor(Brand.primaryColor())
                             )
-                        ) { Text(if (capturing) "Capturing…" else "Simulate tap success") }
+                        ) {
+                            Text(if (capturing) "Waiting for tap…" else "Tap Card (Test)")
+                        }
 
                         if (cardCaptured) {
                             AssistChip(
@@ -122,7 +164,7 @@ fun PaymentScreen(
                                 label = { Text("Card captured") },
                                 leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
                                 colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = Brand.successColor(),         // solid money green
+                                    containerColor = Brand.successColor(),
                                     labelColor = Color.White,
                                     leadingIconContentColor = Color.White
                                 ),
@@ -131,12 +173,11 @@ fun PaymentScreen(
                                 )
                             )
                         }
-
                     }
                 }
             }
 
-            // Communication Preferences (auto opt-in)
+            // Communication Preferences
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -160,22 +201,18 @@ fun PaymentScreen(
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = smsConsent, onCheckedChange = { smsConsent = it }, colors = Brand.checkboxColors())
-                        Spacer(Modifier.width(8.dp))
-                        Text("Phone / SMS consent")
+                        Spacer(Modifier.width(8.dp)); Text("Phone / SMS consent")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = emailConsent, onCheckedChange = { emailConsent = it }, colors = Brand.checkboxColors())
-                        Spacer(Modifier.width(8.dp))
-                        Text("Email consent")
+                        Spacer(Modifier.width(8.dp)); Text("Email consent")
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = mailConsent, onCheckedChange = { mailConsent = it }, colors = Brand.checkboxColors())
-                        Spacer(Modifier.width(8.dp))
-                        Text("Direct mail consent")
+                        Spacer(Modifier.width(8.dp)); Text("Direct mail consent")
                     }
                 }
             }
-
 
             // Signature
             Text("Signature", style = MaterialTheme.typography.titleMedium)
@@ -188,7 +225,7 @@ fun PaymentScreen(
                 onSignedChanged = { signed = it }
             )
 
-            // Submit
+            // Submit (placeholder; same gating as before)
             val primaryCta = if (isMonthly)
                 "Submit first payment & schedule"
             else
@@ -200,16 +237,10 @@ fun PaymentScreen(
                     submitBusy = true
                     scope.launch {
                         try {
-                            if (!cardCaptured) {
-                                error = "Please tap a card first."
-                                return@launch
-                            }
-                            if (!signed) {
-                                error = "Signature required."
-                                return@launch
-                            }
+                            if (!cardCaptured) { error = "Please tap a card first."; return@launch }
+                            if (!signed) { error = "Signature required."; return@launch }
 
-                            // 1) Save consents (best-effort; show error but continue)
+                            // Best-effort: save consents
                             try {
                                 withContext(Dispatchers.IO) {
                                     RetrofitProvider.api.updateDonorConsent(
@@ -223,74 +254,14 @@ fun PaymentScreen(
                                     )
                                 }
                             } catch (e: Exception) {
-                                // Non-fatal; show + log but continue to payment
-                                val msg =
-                                    "Saved payment, but failed to store communication preferences: ${e.message}"
-                                error = msg
-                                // Optionally log to EVENT_LOG (since we already wired logEvent previously)
-                                scope.launch {
-                                    try {
-                                        RetrofitProvider.api.logEvent(
-                                            com.example.clarity.api.model.LogEventIn(
-                                                event_type = "DONOR_CONSENT_UPDATE_ERROR",
-                                                session_id = sessionId,
-                                                donor_id = donorId,
-                                                attributes = mapOf(
-                                                    "message" to (e.message ?: "Unknown"),
-                                                    "sms" to smsConsent,
-                                                    "email" to emailConsent,
-                                                    "mail" to mailConsent
-                                                )
-                                            )
-                                        )
-                                    } catch (_: Exception) {
-                                    }
-                                }
+                                error = "Saved payment, but failed to store communication preferences: ${e.message}"
                             }
 
-                            // 2) Proceed with payment
-                            if (isMonthly) {
-                                // Monthly placeholder
-                                successMsg =
-                                    "Captured card & signature. TODO: SetupIntent + Subscription."
-                            } else {
-                                val body = com.example.clarity.api.model.PaymentIntentIn(
-                                    amount = amountCents,
-                                    currency = currency,
-                                    session_id = sessionId,
-                                    donor_id = donorId
-                                )
-                                val res = withContext(Dispatchers.IO) {
-                                    RetrofitProvider.api.createPaymentIntent(body)
-                                }
-                                successMsg =
-                                    "Created PaymentIntent: ${res.id} (client secret received)."
-                            }
-
+                            // Placeholder success
+                            successMsg = "Card detected & signed. (No payment attempted.)"
                             onDone()
                         } catch (e: Exception) {
-                            val msg = e.message ?: "Payment failed."
-                            error = msg
-
-                            // Fire-and-forget event log (don’t let this crash the UI)
-                            scope.launch {
-                                try {
-                                    RetrofitProvider.api.logEvent(
-                                        com.example.clarity.api.model.LogEventIn(
-                                            event_type = if (isMonthly) "PAYMENT_MONTHLY_ERROR" else "PAYMENT_OTG_ERROR",
-                                            session_id = sessionId,
-                                            donor_id = donorId,
-                                            attributes = mapOf(
-                                                "message" to msg,
-                                                "isMonthly" to isMonthly,
-                                                "amount_cents" to amountCents,
-                                                "currency" to currency
-                                            )
-                                        )
-                                    )
-                                } catch (_: Exception) { /* swallow */
-                                }
-                            }
+                            error = e.message ?: "Payment failed."
                         } finally {
                             submitBusy = false
                         }
@@ -305,29 +276,67 @@ fun PaymentScreen(
                 Text(if (submitBusy) "Processing…" else primaryCta)
             }
 
-            successMsg?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium)
-            }
-            error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
+            successMsg?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         }
     }
 }
 
+/* ---------- NFC helpers ---------- */
+
+private fun enableReaderMode(
+    activity: Activity,
+    onTag: (Tag) -> Unit,
+    onError: (String?) -> Unit
+): Boolean {
+    val adapter = NfcAdapter.getDefaultAdapter(activity) ?: return false
+    if (!adapter.isEnabled) return false
+
+    val flags =
+        NfcAdapter.FLAG_READER_NFC_A or      // Most contactless credit cards
+                NfcAdapter.FLAG_READER_NFC_B or
+                NfcAdapter.FLAG_READER_NFC_F or
+                NfcAdapter.FLAG_READER_NFC_V or
+                NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK
+
+    adapter.enableReaderMode(
+        activity,
+        NfcAdapter.ReaderCallback { tag ->
+            try {
+                onTag(tag)
+            } catch (t: Throwable) {
+                onError(t.message)
+            }
+        },
+        flags,
+        null
+    )
+    return true
+}
+
+private fun disableReaderMode(activity: Activity?) {
+    try {
+        val adapter = activity?.let { NfcAdapter.getDefaultAdapter(it) } ?: return
+        adapter.disableReaderMode(activity)
+    } catch (_: Throwable) { /* no-op */ }
+}
+
+/* ---------- Small utilities ---------- */
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 @Composable
 private fun AcceptedRow() {
-    // Quick, text-based placeholders. Swap for real brand images if you like.
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BrandPill("Visa")
-        BrandPill("Mastercard")
-        BrandPill("AmEx")
-        BrandPill("Google Pay")
-        BrandPill("Apple Pay")
+        BrandPill("Visa"); BrandPill("Mastercard"); BrandPill("AmEx"); BrandPill("Google Pay"); BrandPill("Apple Pay")
     }
 }
 
@@ -364,16 +373,10 @@ private fun SignaturePad(
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectDragGestures(
-                        onDragStart = { offset ->
-                            currentPath = listOf(offset)
-                        },
-                        onDrag = { change, _ ->
-                            currentPath = currentPath + change.position
-                        },
+                        onDragStart = { offset -> currentPath = listOf(offset) },
+                        onDrag = { change, _ -> currentPath = currentPath + change.position },
                         onDragEnd = {
-                            if (currentPath.size > 1) {
-                                paths = paths + listOf(currentPath)
-                            }
+                            if (currentPath.size > 1) paths = paths + listOf(currentPath)
                             currentPath = emptyList()
                         }
                     )
@@ -415,13 +418,8 @@ private fun SignaturePad(
         ) {
             TextButton(
                 onClick = { paths = emptyList() },
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = Brand.secondaryColor() // ✅ match charity
-                )
-            ) {
-                Text("Clear")
-            }
+                colors = ButtonDefaults.textButtonColors(contentColor = Brand.secondaryColor())
+            ) { Text("Clear") }
         }
-
     }
 }
