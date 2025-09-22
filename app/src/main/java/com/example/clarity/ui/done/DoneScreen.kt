@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.dp
 import com.example.clarity.data.SessionStore
 import androidx.compose.ui.text.style.TextAlign
 import com.example.clarity.ui.theme.Brand
+import coil.compose.AsyncImage
 
 
 @Composable
@@ -17,6 +18,7 @@ fun DoneScreen(
     onStartNextDonation: () -> Unit
 ) {
     val charity = SessionStore.charityName
+    val charityLogoUrl = SessionStore.charityLogoUrl.orEmpty()
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -29,9 +31,23 @@ fun DoneScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Charity logo
+            if (charityLogoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = charityLogoUrl,
+                    contentDescription = "Charity logo",
+                    modifier = Modifier
+                        .height(220.dp)
+                        .padding(bottom = 16.dp)
+                )
+            }
+
             Text(
-                text = "Thank you for your donation to \n$charity!",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold, textAlign=TextAlign.Center)
+                text = "Thank you for your Donation!",
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center
+                )
             )
 
             Text(

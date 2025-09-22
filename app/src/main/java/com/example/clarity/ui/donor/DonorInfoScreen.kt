@@ -33,6 +33,7 @@ import kotlin.random.Random
 import com.example.clarity.data.SessionStore
 import com.example.clarity.ui.theme.Brand
 import androidx.compose.ui.text.font.FontWeight
+import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,6 +119,19 @@ fun DonorInfoScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    // Charity logo in top right
+                    val charityLogoUrl = SessionStore.charityLogoUrl.orEmpty()
+                    if (charityLogoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = charityLogoUrl,
+                            contentDescription = "Charity logo",
+                            modifier = Modifier
+                                .height(40.dp)
+                                .padding(end = 8.dp)
+                        )
                     }
                 },
                 colors = Brand.appBarColors()

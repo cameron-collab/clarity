@@ -51,3 +51,15 @@ data class DonorConsentIn(
     val consent_email: Boolean = true,
     val consent_mail: Boolean = true
 )
+
+data class SignatureUploadIn(
+    val session_id: String,
+    val donor_id: String,
+    val signature_data: String // Base64 encoded PNG
+)
+
+data class SignatureUploadOut(
+    val signature_id: String,
+    val signature_url: String,
+    val success: Boolean
+)

@@ -127,8 +127,8 @@ interface GlobalfacesApi {
     @GET("/payment_method/{payment_method_id}/can_save")
     suspend fun canSavePaymentMethod(@Path("payment_method_id") paymentMethodId: String): PaymentMethodSaveabilityResponse
 
-    // Update the existing attachPaymentMethod to return the new response type
-
+    @POST("/signature/upload")
+    suspend fun uploadSignature(@Body body: SignatureUploadIn): SignatureUploadOut
 
 
 

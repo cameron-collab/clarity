@@ -15,6 +15,7 @@ import com.example.clarity.ui.login.LoginScreen
 import com.example.clarity.ui.payment.PaymentScreen
 import com.example.clarity.ui.signature.SignatureScreen
 import com.example.clarity.ui.verify.SmsVerifyScreen
+import com.example.clarity.data.SessionStore
 
 object Route {
     const val Login = "login"
@@ -48,6 +49,8 @@ fun AppNav() {
             )
         }
 
+// Update the Campaign composable call in AppNav():
+
         composable(Route.Campaign,
             arguments = listOf(
                 navArgument("session"){ type = NavType.StringType },
@@ -56,7 +59,31 @@ fun AppNav() {
         ) { back ->
             val s = back.arguments!!.getString("session")!!
             val f = back.arguments!!.getString("fundraiser")!!
-            CampaignScreen(s, f) { nav.navigate(Route.donor(s, f)) }
+            CampaignScreen(
+                sessionId = s,
+                fundraiserId = f,
+                onStartDonation = { nav.navigate(Route.donor(s, f)) },
+                onLogout = {
+                    // Clear session data
+                    SessionStore.resetForNextDonor()
+                    // Clear session/fundraiser data too
+                    SessionStore.sessionId = null
+                    SessionStore.fundraiserId = null
+                    SessionStore.fundraiserDisplayName = null
+                    SessionStore.charityId = null
+                    SessionStore.charityName = "Your Charity"
+                    SessionStore.charityLogoUrl = null
+                    SessionStore.charityBlurb = null
+                    SessionStore.brandPrimaryHex = null
+                    SessionStore.campaign = null
+
+                    // Navigate back to login and clear the back stack
+                    nav.navigate(Route.Login) {
+                        popUpTo(0) { inclusive = true }  // Clear entire back stack
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
 
         composable(

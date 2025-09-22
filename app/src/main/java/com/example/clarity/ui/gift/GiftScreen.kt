@@ -23,6 +23,11 @@ import kotlinx.coroutines.withContext
 import kotlin.math.max
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
+import coil.compose.AsyncImage
+
 
 
 private val MoneyChipWidth = 96.dp
@@ -145,6 +150,27 @@ fun GiftScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Gift") },
+                navigationIcon = {
+                    IconButton(onClick = onBackToDonor) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                },
+                actions = {
+                    // Charity logo in top right
+                    val charityLogoUrl = SessionStore.charityLogoUrl.orEmpty()
+                    if (charityLogoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = charityLogoUrl,
+                            contentDescription = "Charity logo",
+                            modifier = Modifier
+                                .height(40.dp)
+                                .padding(end = 8.dp)
+                        )
+                    }
+                },
                 colors = Brand.appBarColors()
             )
         }

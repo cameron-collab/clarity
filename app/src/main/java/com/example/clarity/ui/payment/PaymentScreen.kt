@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,8 +20,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.clarity.api.RetrofitProvider
 import com.example.clarity.api.payment.TapToPayController
@@ -30,6 +31,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.example.clarity.api.model.PaymentResult
+import coil.compose.AsyncImage
+import com.example.clarity.api.model.SignatureUploadIn
+
 
 @Composable
 fun PaymentScreen(
@@ -62,14 +66,39 @@ fun PaymentScreen(
     var emailConsent by remember { mutableStateOf(true) }
     var mailConsent by remember { mutableStateOf(true) }
 
+    var signatureData by remember { mutableStateOf<ByteArray?>(null) }
+    var signatureUploading by remember { mutableStateOf(false) }
+    var signatureUploaded by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(if (isMonthly) "Monthly Payment" else "One-Time Payment") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                },
+                actions = {
+                    // Charity logo in top right
+                    val charityLogoUrl = SessionStore.charityLogoUrl.orEmpty()
+                    if (charityLogoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = charityLogoUrl,
+                            contentDescription = "Charity logo",
+                            modifier = Modifier
+                                .height(40.dp)
+                                .padding(end = 8.dp)
+                        )
+                    }
+                },
                 colors = Brand.appBarColors()
             )
         }
-    ) { pad ->
+    ){ pad ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -126,11 +155,11 @@ fun PaymentScreen(
                                                 paymentCompleted = true
                                                 paymentInProgress = false
                                                 statusMsg = "Payment successful!"
-                                                successMsg = if (isMonthly) {
-                                                    "Payment completed and monthly subscription set up successfully"
-                                                } else {
-                                                    "Payment completed successfully"
-                                                }
+//                                                successMsg = if (isMonthly) {
+//                                                    "Payment completed and monthly subscription set up successfully"
+//                                                } else {
+//                                                    "Payment completed successfully"
+//                                                }
                                             }
 
                                             is PaymentResult.Failed -> {
@@ -217,7 +246,11 @@ fun PaymentScreen(
                     .height(180.dp)
                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surface),
-                onSignedChanged = { signed = it }
+                onSignedChanged = { signed = it },
+                onSignatureCapture = { pngData ->
+                    signatureData = pngData
+                    signatureUploaded = false // Reset upload status when signature changes
+                }
             )
 
             // Submit Button
@@ -243,7 +276,46 @@ fun PaymentScreen(
                                 return@launch
                             }
 
-                            // Save consents
+                            // Upload signature first if we have signature data and haven't uploaded yet
+                            if (signatureData != null && !signatureUploaded) {
+                                signatureUploading = true
+                                try {
+                                    val base64Signature = android.util.Base64.encodeToString(
+                                        signatureData!!,
+                                        android.util.Base64.DEFAULT
+                                    )
+
+                                    val uploadResponse = withContext(Dispatchers.IO) {
+                                        RetrofitProvider.api.uploadSignature(
+                                            SignatureUploadIn(
+                                                session_id = sessionId,
+                                                donor_id = donorId,
+                                                signature_data = base64Signature
+                                            )
+                                        )
+                                    }
+
+                                    if (uploadResponse.success) {
+                                        signatureUploaded = true
+                                        println("=== DEBUG: Signature uploaded successfully: ${uploadResponse.signature_id} ===")
+                                    } else {
+                                        error = "Failed to upload signature"
+                                        submitBusy = false
+                                        signatureUploading = false
+                                        return@launch
+                                    }
+
+                                } catch (e: Exception) {
+                                    error = "Signature upload failed: ${e.message}"
+                                    submitBusy = false
+                                    signatureUploading = false
+                                    return@launch
+                                } finally {
+                                    signatureUploading = false
+                                }
+                            }
+
+                            // Save consents (existing code)
                             try {
                                 withContext(Dispatchers.IO) {
                                     RetrofitProvider.api.updateDonorConsent(
@@ -271,13 +343,19 @@ fun PaymentScreen(
                         }
                     }
                 },
-                enabled = paymentCompleted && signed && !submitBusy,
+                enabled = paymentCompleted && signed && !submitBusy && !signatureUploading,
                 colors = Brand.buttonColors(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
             ) {
-                Text(if (submitBusy) "Processing…" else primaryCta)
+                Text(
+                    text = when {
+                        signatureUploading -> "Uploading Signature..."
+                        submitBusy -> "Processing..."
+                        else -> primaryCta
+                    }
+                )
             }
 
             successMsg?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Brand.successColor()) }
@@ -316,7 +394,8 @@ private fun SignaturePad(
     modifier: Modifier = Modifier,
     strokeColor: Color = MaterialTheme.colorScheme.onSurface,
     strokeWidth: Float = 6f,
-    onSignedChanged: (Boolean) -> Unit
+    onSignedChanged: (Boolean) -> Unit,
+    onSignatureCapture: (ByteArray?) -> Unit // New callback for PNG data
 ) {
     var paths by remember { mutableStateOf(listOf<List<Offset>>()) }
     var currentPath by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -332,7 +411,11 @@ private fun SignaturePad(
                         onDragStart = { offset -> currentPath = listOf(offset) },
                         onDrag = { change, _ -> currentPath = currentPath + change.position },
                         onDragEnd = {
-                            if (currentPath.size > 1) paths = paths + listOf(currentPath)
+                            if (currentPath.size > 1) {
+                                paths = paths + listOf(currentPath)
+                                // Capture signature as PNG whenever paths change
+                                captureSignatureToPng(paths, size, onSignatureCapture)
+                            }
                             currentPath = emptyList()
                         }
                     )
@@ -371,9 +454,71 @@ private fun SignaturePad(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             TextButton(
-                onClick = { paths = emptyList() },
+                onClick = {
+                    paths = emptyList()
+                    onSignatureCapture(null) // Clear signature data
+                },
                 colors = ButtonDefaults.textButtonColors(contentColor = Brand.secondaryColor())
             ) { Text("Clear") }
         }
+    }
+}
+
+// Helper function to capture signature as PNG
+private fun captureSignatureToPng(
+    paths: List<List<Offset>>,
+    canvasSize: IntSize,
+    onCapture: (ByteArray?) -> Unit
+) {
+    if (paths.isEmpty()) {
+        onCapture(null)
+        return
+    }
+
+    try {
+        // Create bitmap
+        val bitmap = android.graphics.Bitmap.createBitmap(
+            canvasSize.width.toInt(),
+            canvasSize.height.toInt(),
+            android.graphics.Bitmap.Config.ARGB_8888
+        )
+
+        val canvas = android.graphics.Canvas(bitmap)
+
+        // Fill with white background
+        canvas.drawColor(android.graphics.Color.WHITE)
+
+        // Create paint for drawing
+        val paint = android.graphics.Paint().apply {
+            color = android.graphics.Color.BLACK
+            strokeWidth = 6f
+            style = android.graphics.Paint.Style.STROKE
+            strokeCap = android.graphics.Paint.Cap.ROUND
+            strokeJoin = android.graphics.Paint.Join.ROUND
+            isAntiAlias = true
+        }
+
+        // Draw signature paths
+        paths.forEach { stroke ->
+            if (stroke.size > 1) {
+                val path = android.graphics.Path()
+                path.moveTo(stroke[0].x, stroke[0].y)
+                for (i in 1 until stroke.size) {
+                    path.lineTo(stroke[i].x, stroke[i].y)
+                }
+                canvas.drawPath(path, paint)
+            }
+        }
+
+        // Convert bitmap to PNG byte array
+        val outputStream = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, outputStream)
+        val pngBytes = outputStream.toByteArray()
+
+        onCapture(pngBytes)
+
+    } catch (e: Exception) {
+        println("=== DEBUG: Signature capture failed: ${e.message} ===")
+        onCapture(null)
     }
 }

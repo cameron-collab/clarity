@@ -21,7 +21,8 @@ import com.google.accompanist.systemuicontroller.rememberSystemUiController
 fun CampaignScreen(
     sessionId: String,
     fundraiserId: String,
-    onStartDonation: () -> Unit
+    onStartDonation: () -> Unit,
+    onLogout: () -> Unit  // Add logout callback
 ) {
     Brand.ApplySystemBars()
     // Pull campaign/charity/fundraiser from the session cache
@@ -37,102 +38,99 @@ fun CampaignScreen(
         hexToColorOrNull(SessionStore.brandPrimaryHex) ?: fallbackBrand
     }
 
-    println("=== DEBUG: SessionStore.charityLogoUrl = '${SessionStore.charityLogoUrl}' ===")
-    println("=== DEBUG: SessionStore.charityName = '${SessionStore.charityName}' ===")
-
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(20.dp)
-                .fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Top)
-        ) {
-
-
-            // Charity card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (charityLogoUrl.isNotBlank()) {
-                        println("=== DEBUG: Loading image from URL: $charityLogoUrl ===")
-                        AsyncImage(
-                            model = charityLogoUrl,
-                            contentDescription = "$charityName logo",
-                            modifier = Modifier
-                                .size(140.dp)
-                                .padding(top = 4.dp),
-                            onError = { error ->
-                                println("=== DEBUG: Image load failed: ${error.result.throwable} ===")
-                            },
-                            onSuccess = {
-                                println("=== DEBUG: Image loaded successfully ===")
-                            }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Campaign") },
+                colors = Brand.appBarColors(),
+                actions = {
+                    // Logout button in top right
+                    TextButton(
+                        onClick = onLogout,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         )
-                    } else {
-                        println("=== DEBUG: No logo URL provided - charityLogoUrl is empty ===")
-                    }
-
-                    Text(
-                        text = charityName,
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        textAlign = TextAlign.Center
-                    )
-
-                    if (charityBlurb.isNotBlank()) {
-                        Text(
-                            text = charityBlurb,
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center
-                        )
+                    ) {
+                        Text("Logout")
                     }
                 }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Button(
-                onClick = onStartDonation,
+            )
+        }
+    ) { paddingValues ->
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = Brand.buttonColors(),
-                shape = RoundedCornerShape(16.dp)
+                    .padding(20.dp)
+                    .fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Top)
             ) {
-                Text("Start Donation", style = MaterialTheme.typography.titleMedium)
-            }
 
-            Spacer(Modifier.weight(1f)) // pushes following to the bottom
+                // Charity card with integrated start donation button
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = Brand.cardColors()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        if (charityLogoUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = charityLogoUrl,
+                                contentDescription = "$charityName logo",
+                                modifier = Modifier
+                                    .size(220.dp)
+                                    .padding(top = 8.dp)
+                            )
+                        }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "${SessionStore.charityName} — ${SessionStore.campaign?.name.orEmpty()}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "${SessionStore.fundraiserDisplayName.orEmpty()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                        if (charityBlurb.isNotBlank()) {
+                            Text(
+                                text = charityBlurb,
+                                style = MaterialTheme.typography.bodyMedium,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+
+                        Button(
+                            onClick = onStartDonation,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp),
+                            colors = Brand.buttonColors(),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("Start Donation", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.weight(1f)) // pushes following to the bottom
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "${SessionStore.charityName} — ${SessionStore.campaign?.name.orEmpty()}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${SessionStore.fundraiserDisplayName.orEmpty()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
 }
-
 /* ---------- Helpers (non-composable) ---------- */
 
 private fun hexToColorOrNull(hex: String?): Color? {
