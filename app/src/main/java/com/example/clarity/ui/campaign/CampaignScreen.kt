@@ -37,6 +37,9 @@ fun CampaignScreen(
         hexToColorOrNull(SessionStore.brandPrimaryHex) ?: fallbackBrand
     }
 
+    println("=== DEBUG: SessionStore.charityLogoUrl = '${SessionStore.charityLogoUrl}' ===")
+    println("=== DEBUG: SessionStore.charityName = '${SessionStore.charityName}' ===")
+
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -65,13 +68,22 @@ fun CampaignScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     if (charityLogoUrl.isNotBlank()) {
+                        println("=== DEBUG: Loading image from URL: $charityLogoUrl ===")
                         AsyncImage(
                             model = charityLogoUrl,
                             contentDescription = "$charityName logo",
                             modifier = Modifier
                                 .size(140.dp)
-                                .padding(top = 4.dp)
+                                .padding(top = 4.dp),
+                            onError = { error ->
+                                println("=== DEBUG: Image load failed: ${error.result.throwable} ===")
+                            },
+                            onSuccess = {
+                                println("=== DEBUG: Image loaded successfully ===")
+                            }
                         )
+                    } else {
+                        println("=== DEBUG: No logo URL provided - charityLogoUrl is empty ===")
                     }
 
                     Text(

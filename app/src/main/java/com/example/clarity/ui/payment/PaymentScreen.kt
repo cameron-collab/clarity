@@ -24,12 +24,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.clarity.api.RetrofitProvider
 import com.example.clarity.api.payment.TapToPayController
-import com.example.clarity.api.payment.PaymentResult
 import com.example.clarity.data.SessionStore
 import com.example.clarity.ui.theme.Brand
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.clarity.api.model.PaymentResult
 
 @Composable
 fun PaymentScreen(
@@ -100,6 +100,10 @@ fun PaymentScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         // Start Payment Button - now uses real Stripe Terminal
+                        // Keep the original PaymentScreen payment processing logic - no special handling needed
+
+                        // Keep the original PaymentScreen payment processing logic - no special handling needed
+
                         Button(
                             enabled = !paymentInProgress && !paymentCompleted,
                             onClick = {
@@ -122,8 +126,13 @@ fun PaymentScreen(
                                                 paymentCompleted = true
                                                 paymentInProgress = false
                                                 statusMsg = "Payment successful!"
-                                                successMsg = "Payment completed successfully"
+                                                successMsg = if (isMonthly) {
+                                                    "Payment completed and monthly subscription set up successfully"
+                                                } else {
+                                                    "Payment completed successfully"
+                                                }
                                             }
+
                                             is PaymentResult.Failed -> {
                                                 error = result.error
                                                 statusMsg = "Payment failed"

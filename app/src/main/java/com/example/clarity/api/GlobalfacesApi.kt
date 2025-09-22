@@ -1,23 +1,6 @@
 package com.example.clarity.api
 
-import com.example.clarity.api.model.DonorUpsertIn
-import com.example.clarity.api.model.DonorUpsertOut
-import com.example.clarity.api.model.PaymentIntentIn
-import com.example.clarity.api.model.PaymentIntentOut
-import com.example.clarity.api.model.SetupIntentIn
-import com.example.clarity.api.model.SetupIntentOut
-import com.example.clarity.api.model.SubscriptionCreateIn
-import com.example.clarity.api.model.SubscriptionCreateOut
-import com.example.clarity.api.model.CustomerUpsertIn
-import com.example.clarity.api.model.CustomerUpsertOut
-import com.example.clarity.api.model.PaymentMethodAttachIn
-import com.example.clarity.api.model.PaymentMethodAttachOut
-import com.example.clarity.api.model.SendSmsIn
-import com.example.clarity.api.model.SendSmsOut
-import com.example.clarity.api.model.SmsStatusOut
-import com.example.clarity.api.model.DonorConsentIn
-import com.example.clarity.api.model.TerminalPaymentIntentIn
-import com.example.clarity.api.model.TerminalPaymentIntentOut
+import com.example.clarity.api.model.*
 import retrofit2.http.Body
 import retrofit2.http.POST
 import retrofit2.http.GET
@@ -70,6 +53,7 @@ data class DeviceRegistrationOut(
 
 data class PaymentMethodResponse(
     val payment_method_id: String?,
+    val generated_card_id: String?,  // Add this field
     val status: String
 )
 
@@ -102,6 +86,7 @@ interface GlobalfacesApi {
     @POST("/customer/upsert")
     suspend fun upsertCustomer(@Body body: CustomerUpsertIn): CustomerUpsertOut
 
+    // In your GlobalfacesApi.kt, change back to:
     @POST("/payment_method/attach")
     suspend fun attachPaymentMethod(@Body body: PaymentMethodAttachIn): PaymentMethodAttachOut
 
@@ -138,6 +123,12 @@ interface GlobalfacesApi {
 
     @GET("/payment_intent/{payment_intent_id}/payment_method")
     suspend fun getPaymentMethodFromIntent(@Path("payment_intent_id") paymentIntentId: String): PaymentMethodResponse
+
+    @GET("/payment_method/{payment_method_id}/can_save")
+    suspend fun canSavePaymentMethod(@Path("payment_method_id") paymentMethodId: String): PaymentMethodSaveabilityResponse
+
+    // Update the existing attachPaymentMethod to return the new response type
+
 
 
 

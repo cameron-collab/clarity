@@ -95,3 +95,18 @@ data class TerminalPaymentIntentOut(
     val client_secret: String,
     val status: String
 )
+
+sealed class PaymentResult {
+    data class Success(
+        val paymentIntentId: String,
+        val subscriptionId: String? = null
+    ) : PaymentResult()
+
+    data class Failed(val error: String) : PaymentResult()
+}
+
+data class PaymentMethodSaveabilityResponse(
+    val can_save: Boolean,
+    val payment_method_type: String,
+    val reason: String?
+)

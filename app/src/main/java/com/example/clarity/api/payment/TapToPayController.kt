@@ -13,6 +13,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import com.stripe.stripeterminal.external.models.CollectConfiguration
 import com.stripe.stripeterminal.external.models.AllowRedisplay
+import com.example.clarity.api.model.*
 
 /**
  * Real Stripe Terminal controller based on Stripe sample code
@@ -219,14 +220,9 @@ class TapToPayController {
     ): PaymentResult {
         return try {
             println("=== DEBUG: handleMonthlySubscription started ===")
-            println("=== DEBUG: paymentIntent.paymentMethod = ${paymentIntent.paymentMethod} ===")
 
             val selectedGift = SessionStore.selectedGift
             val priceId = selectedGift?.stripePriceId
-
-            println("=== DEBUG: selectedGift = $selectedGift ===")
-            println("=== DEBUG: priceId = $priceId ===")
-            println("=== DEBUG: paymentIntent.id = ${paymentIntent.id} ===")
 
             if (priceId.isNullOrBlank()) {
                 return PaymentResult.Failed("No Stripe Price ID found for monthly product")
@@ -234,19 +230,33 @@ class TapToPayController {
 
             // Get payment method ID from backend
             val paymentIntentId = paymentIntent.id ?: return PaymentResult.Failed("Missing payment intent ID")
-            val paymentMethodResponse = RetrofitProvider.api.getPaymentMethodFromIntent(paymentIntentId)
-            val paymentMethodId = paymentMethodResponse.payment_method_id
+            println("=== DEBUG: About to call getPaymentMethodFromIntent with ID: $paymentIntentId ===")
 
-            println("=== DEBUG: Retrieved paymentMethodId from backend = $paymentMethodId ===")
+            val paymentMethodResponse = RetrofitProvider.api.getPaymentMethodFromIntent(paymentIntentId)
+            println("=== DEBUG: Raw payment method response = $paymentMethodResponse ===")
+
+            val paymentMethodId = if (!paymentMethodResponse.generated_card_id.isNullOrBlank()) {
+                println("=== DEBUG: Using generated_card_id: ${paymentMethodResponse.generated_card_id} ===")
+                paymentMethodResponse.generated_card_id
+            } else {
+                println("=== DEBUG: generated_card_id is null/blank, falling back to payment_method_id: ${paymentMethodResponse.payment_method_id} ===")
+                paymentMethodResponse.payment_method_id
+            }
+            println("=== DEBUG: Using paymentMethodId = $paymentMethodId ===")
+
 
             if (paymentMethodId.isNullOrBlank()) {
                 return PaymentResult.Failed("No payment method found for payment intent")
             }
 
+            println("=== DEBUG: Payment method response = $paymentMethodResponse ===")
+            println("=== DEBUG: Using paymentMethodId = $paymentMethodId ===")
+            println("=== DEBUG: generated_card_id = ${paymentMethodResponse.generated_card_id} ===")
+            println("=== DEBUG: original payment_method_id = ${paymentMethodResponse.payment_method_id} ===")
+
             // Get donor info for customer creation
             val donorInfo = getDonorInfo(donorId)
 
-            // Create Stripe customer
             val customerResponse = RetrofitProvider.api.upsertCustomer(
                 com.example.clarity.api.model.CustomerUpsertIn(
                     email = donorInfo.email,
@@ -255,7 +265,7 @@ class TapToPayController {
                     metadata = mapOf(
                         "donor_id" to donorId,
                         "session_id" to sessionId,
-                        "payment_intent_id" to (paymentIntent.id ?: "")
+                        "payment_intent_id" to paymentIntentId
                     )
                 )
             )
@@ -269,9 +279,10 @@ class TapToPayController {
                     donor_id = donorId
                 )
             )
+            println("=== DEBUG: Successfully attached payment method to customer ===")
 
-            // For Terminal payments, we'll create the subscription without a saved payment method
-            // The initial payment was already processed via Terminal
+
+            // Create subscription
             val subscriptionResponse = RetrofitProvider.api.createSubscription(
                 com.example.clarity.api.model.SubscriptionCreateIn(
                     customer_id = customerResponse.customer_id,
@@ -282,7 +293,7 @@ class TapToPayController {
                         "product_id" to (selectedGift?.productId ?: ""),
                         "amount_cents" to amountCents.toString(),
                         "currency" to currency,
-                        "initial_payment_intent_id" to (paymentIntent.id ?: ""),
+                        "initial_payment_intent_id" to paymentIntentId,
                         "payment_method" to "terminal_payment"
                     )
                 )
@@ -290,7 +301,7 @@ class TapToPayController {
 
             if (subscriptionResponse.status in listOf("active", "incomplete")) {
                 PaymentResult.Success(
-                    paymentIntentId = paymentIntent.id ?: return PaymentResult.Failed("Missing payment intent ID"),
+                    paymentIntentId = paymentIntentId,
                     subscriptionId = subscriptionResponse.id
                 )
             } else {
@@ -413,17 +424,6 @@ class TapToPayController {
         )
     }
 }
-
-// Result classes
-sealed class PaymentResult {
-    data class Success(
-        val paymentIntentId: String,
-        val subscriptionId: String? = null
-    ) : PaymentResult()
-
-    data class Failed(val error: String) : PaymentResult()
-}
-
 // Data class for donor information
 data class DonorInfo(
     val email: String,
