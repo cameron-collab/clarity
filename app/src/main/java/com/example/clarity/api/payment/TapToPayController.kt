@@ -82,7 +82,7 @@ class TapToPayController {
 
     suspend fun createTerminalPaymentIntent(
         amountCents: Int,
-        currency: String = "cad",
+        currency: String,
         sessionId: String? = null,
         donorId: String? = null
     ): PaymentIntent {

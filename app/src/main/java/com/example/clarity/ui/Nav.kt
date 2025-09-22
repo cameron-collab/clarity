@@ -147,11 +147,7 @@ fun AppNav() {
                 mobileE164 = phoneE164,
                 onGoToPay = { nav.navigate(Route.pay(s, d)) },
                 onBackToDonor = {
-                    // We stored fundraiserId at login; reuse it to return to donor screen.
-                    val f = com.example.clarity.data.SessionStore.fundraiserId ?: return@GiftScreen
-                    nav.navigate(Route.donor(s, f)) {
-                        launchSingleTop = true
-                    }
+                    nav.popBackStack()   // go back to the existing Donor
                 }
             )
         }
