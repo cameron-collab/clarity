@@ -24,6 +24,17 @@ class TapToPayController {
         private val discoveryConfig = DiscoveryConfiguration.TapToPayDiscoveryConfiguration(isSimulated = false)
     }
 
+    private suspend fun getLocationId(): String {
+        return try {
+            val response = RetrofitProvider.api.getTerminalLocation()
+            println("=== DEBUG: Got location ID from backend: ${response.location_id} ===")
+            response.location_id
+        } catch (e: Exception) {
+            println("=== DEBUG: Failed to get location ID from backend, using fallback: ${e.message} ===")
+            "tml_GMwgTw8OHAJtnR" // fallback to test location
+        }
+    }
+
     suspend fun initializeTapToPay(): Boolean {
         return suspendCancellableCoroutine { continuation ->
             val discoveryListener = object : DiscoveryListener {
@@ -60,31 +71,43 @@ class TapToPayController {
     }
 
     private fun connectToReader(reader: Reader, callback: (Boolean) -> Unit) {
-        val connectionConfig = ConnectionConfiguration.TapToPayConnectionConfiguration(
-            locationId = "tml_GMwgTw8OHAJtnR", // Your Stripe Terminal location ID
-            autoReconnectOnUnexpectedDisconnect = true,
-            tapToPayReaderListener = object : TapToPayReaderListener {
-                override fun onDisconnect(reason: DisconnectReason) {
-                    // Handle disconnection
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val locationId = getLocationId()
+                println("=== DEBUG: Connecting to reader with location ID: $locationId ===")
+
+                val connectionConfig = ConnectionConfiguration.TapToPayConnectionConfiguration(
+                    locationId = locationId, // Now dynamic from backend
+                    autoReconnectOnUnexpectedDisconnect = true,
+                    tapToPayReaderListener = object : TapToPayReaderListener {
+                        override fun onDisconnect(reason: DisconnectReason) {
+                            println("=== DEBUG: Reader disconnected: $reason ===")
+                        }
+                    }
+                )
+
+                val readerCallback = object : ReaderCallback {
+                    override fun onSuccess(reader: Reader) {
+                        println("=== DEBUG: Reader connected successfully ===")
+                        callback(true)
+                    }
+
+                    override fun onFailure(e: TerminalException) {
+                        println("=== DEBUG: Reader connection failed: ${e.errorMessage} ===")
+                        callback(false)
+                    }
                 }
-            }
-        )
 
-        val readerCallback = object : ReaderCallback {
-            override fun onSuccess(reader: Reader) {
-                callback(true)
-            }
-
-            override fun onFailure(e: TerminalException) {
+                Terminal.getInstance().connectReader(
+                    reader = reader,
+                    config = connectionConfig,
+                    connectionCallback = readerCallback
+                )
+            } catch (e: Exception) {
+                println("=== DEBUG: Exception in connectToReader: ${e.message} ===")
                 callback(false)
             }
         }
-
-        Terminal.getInstance().connectReader(
-            reader = reader,
-            config = connectionConfig,
-            connectionCallback = readerCallback
-        )
     }
 
     suspend fun createTerminalPaymentIntent(
@@ -381,13 +404,14 @@ class TapToPayController {
                 return true
             }
 
-            // Get device identifier
+            // Get device identifier and dynamic location ID
             val deviceCode = getDeviceIdentifier(context)
+            val locationId = getLocationId()
 
             val response = RetrofitProvider.api.registerDevice(
                 DeviceRegistrationIn(
                     device_code = deviceCode,
-                    location_id = "tml_GMwgTw8OHAJtnR"
+                    location_id = locationId // Use dynamic location ID
                 )
             )
 

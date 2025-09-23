@@ -130,6 +130,7 @@ interface GlobalfacesApi {
     @POST("/signature/upload")
     suspend fun uploadSignature(@Body body: SignatureUploadIn): SignatureUploadOut
 
-
+    @GET("/terminal/location")
+    suspend fun getTerminalLocation(): TerminalLocationOut
 
 }

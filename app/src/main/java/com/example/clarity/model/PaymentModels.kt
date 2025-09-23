@@ -110,3 +110,5 @@ data class PaymentMethodSaveabilityResponse(
     val payment_method_type: String,
     val reason: String?
 )
+
+data class TerminalLocationOut(val location_id: String)
