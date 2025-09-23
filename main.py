@@ -1492,3 +1492,7 @@ def upload_signature(payload: SignatureUploadIn):
         print(f"=== DEBUG: Signature upload failed: {e} ===")
         raise HTTPException(status_code=500, detail=f"Signature upload failed: {str(e)}")
 
+# ---------- Stripe Location ID ----------
+@app.get("/terminal/location")
+def get_terminal_location():
+    return {"location_id": os.getenv("STRIPE_TERMINAL_LOCATION_ID", "")}
