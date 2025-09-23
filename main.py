@@ -689,16 +689,36 @@ async def stripe_webhook(
 def create_subscription(payload: SubscriptionCreateIn):
     try:
         cancel_at_ts = years_from_now_utc(payload.cancel_after_years)
+        
+        # Get the payment method ID from metadata (should be the generated card)
+        payment_method_id = payload.metadata.get("payment_method_id")
+        initial_payment_intent_id = payload.metadata.get("initial_payment_intent_id")
+        
+        if not payment_method_id:
+            raise HTTPException(status_code=400, detail="Payment method ID required for subscription")
+        
+        # Create subscription starting next billing period
+        # Terminal payment counts as first month
+        next_billing = datetime.now(timezone.utc) + timedelta(days=30)
+        
         sub = stripe.Subscription.create(
             customer=payload.customer_id,
             items=[{"price": payload.price_id}],
             cancel_at=cancel_at_ts,
             collection_method="charge_automatically",
-            payment_behavior="default_incomplete",  # Add this line
-            expand=["latest_invoice.payment_intent", "latest_invoice.charge"],
-            metadata=payload.metadata
-            | {"session_id": payload.session_id or "", "donor_id": payload.donor_id or ""},
+            default_payment_method=payment_method_id,
+            billing_cycle_anchor=int(next_billing.timestamp()),
+            proration_behavior="none",
+            metadata=payload.metadata | {
+                "session_id": payload.session_id or "", 
+                "donor_id": payload.donor_id or "",
+                "first_payment_intent": initial_payment_intent_id,
+                "payment_source": "terminal_generated_card"
+            },
         )
+        
+        print(f"=== DEBUG: Subscription {sub.id} created, next billing: {next_billing.isoformat()} ===")
+        
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Stripe subscription error: {e}")
 
@@ -711,7 +731,13 @@ def create_subscription(payload: SubscriptionCreateIn):
                 event_type="SUBSCRIPTION_CREATED",
                 session_id=payload.session_id,
                 donor_id=payload.donor_id,
-                attributes={"subscription_id": sub.id, "cancel_at": sub.cancel_at, "price_id": payload.price_id},
+                attributes={
+                    "subscription_id": sub.id, 
+                    "cancel_at": sub.cancel_at, 
+                    "price_id": payload.price_id,
+                    "billing_cycle_anchor": int(next_billing.timestamp()),
+                    "first_payment_via_terminal": True
+                },
             ),
         )
         cur.execute(
@@ -738,12 +764,8 @@ def create_subscription(payload: SubscriptionCreateIn):
         "id": sub.id,
         "status": sub.status,
         "cancel_at": sub.cancel_at,
-        "latest_invoice": (sub.latest_invoice.id if getattr(sub, "latest_invoice", None) else None),
-        "payment_intent": (
-            sub.latest_invoice.payment_intent.id
-            if getattr(sub, "latest_invoice", None) and getattr(sub.latest_invoice, "payment_intent", None)
-            else None
-        ),
+        "latest_invoice": None,
+        "payment_intent": None,
     }
 
 # ---------- Stripe: Customer upsert ----------
