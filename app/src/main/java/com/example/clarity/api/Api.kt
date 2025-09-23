@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit
 
 object Api {
     // <-- UPDATE THIS to your current ngrok URL (must end with a trailing slash)
-    private const val BASE_URL = "https://8c06d4fd2d20.ngrok-free.app/"
+    private const val BASE_URL = "https://clarity-gabjdth6gcade8c3.canadacentral-01.azurewebsites.net/"
 
     private val moshi = Moshi.Builder()
         .add(KotlinJsonAdapterFactory())

@@ -33,6 +33,10 @@ import kotlinx.coroutines.withContext
 import com.example.clarity.api.model.PaymentResult
 import coil.compose.AsyncImage
 import com.example.clarity.api.model.SignatureUploadIn
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.style.TextAlign
 
 
 @Composable
@@ -372,19 +376,32 @@ private fun AcceptedRow() {
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BrandPill("Visa"); BrandPill("Mastercard"); BrandPill("AmEx"); BrandPill("Google Pay"); BrandPill("Apple Pay")
+        LabeledPaymentIcon(Icons.Default.CreditCard, "Visa")
+        LabeledPaymentIcon(Icons.Default.CreditCard, "Mastercard")
+        LabeledPaymentIcon(Icons.Default.CreditCard, "AmEx")
+        LabeledPaymentIcon(Icons.Default.Contactless, "Google Pay")
+        LabeledPaymentIcon(Icons.Default.Contactless, "Apple Pay")
     }
 }
 
-@Composable private fun BrandPill(label: String) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        tonalElevation = 2.dp,
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+@Composable
+private fun LabeledPaymentIcon(icon: ImageVector, label: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-            Text(label, style = MaterialTheme.typography.bodySmall)
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            modifier = Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }
 

@@ -21,33 +21,40 @@ import com.example.clarity.api.model.*
 class TapToPayController {
 
     companion object {
-        private val discoveryConfig = DiscoveryConfiguration.TapToPayDiscoveryConfiguration(isSimulated = true)
+        private val discoveryConfig = DiscoveryConfiguration.TapToPayDiscoveryConfiguration(isSimulated = false)
     }
 
     suspend fun initializeTapToPay(): Boolean {
         return suspendCancellableCoroutine { continuation ->
             val discoveryListener = object : DiscoveryListener {
                 override fun onUpdateDiscoveredReaders(readers: List<Reader>) {
+                    println("=== DEBUG: Found ${readers.size} readers ===")
+                    readers.forEach { reader ->
+                        println("=== DEBUG: Reader - Type: ${reader.deviceType}, ID: ${reader.id} ===")
+                    }
+
                     if (readers.isNotEmpty()) {
                         connectToReader(readers.first()) { success ->
                             continuation.resume(success)
                         }
                     } else {
-                        continuation.resumeWithException(Exception("No Tap to Pay readers found"))
+                        continuation.resumeWithException(Exception("No Tap to Pay readers found - ensure NFC is enabled"))
                     }
                 }
             }
 
             val discoveryCallback = object : Callback {
                 override fun onSuccess() {
-                    // Discovery completed - readers will be handled in onUpdateDiscoveredReaders
+                    println("=== DEBUG: Discovery process completed ===")
                 }
 
                 override fun onFailure(e: TerminalException) {
+                    println("=== DEBUG: Discovery failed: ${e.errorMessage} ===")
                     continuation.resumeWithException(e)
                 }
             }
 
+            println("=== DEBUG: Starting Tap to Pay discovery (real mode) ===")
             Terminal.getInstance().discoverReaders(discoveryConfig, discoveryListener, discoveryCallback)
         }
     }

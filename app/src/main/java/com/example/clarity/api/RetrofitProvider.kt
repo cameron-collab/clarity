@@ -8,7 +8,7 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 
 object RetrofitProvider {
     // Emulator → host FastAPI
-    private const val BASE_URL = "https://8c06d4fd2d20.ngrok-free.app"
+    private const val BASE_URL = "https://clarity-gabjdth6gcade8c3.canadacentral-01.azurewebsites.net/"
     // For a physical device, swap to your ngrok URL.
 
     private val moshi: Moshi = Moshi.Builder()
